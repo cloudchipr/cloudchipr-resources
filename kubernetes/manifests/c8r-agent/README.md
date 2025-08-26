@@ -19,5 +19,5 @@
 - Apply manifests:
 
   ```bash
-  kubectl -n cloudchipr apply -f https://raw.githubusercontent.com/cloudchipr/cloudchipr-resources/refs/heads/main/kubernetes/manifests/c8r-agent/resources.yaml
+  kubectl apply -f https://raw.githubusercontent.com/cloudchipr/cloudchipr-resources/refs/heads/main/kubernetes/manifests/c8r-agent/resources.yaml
   ```
