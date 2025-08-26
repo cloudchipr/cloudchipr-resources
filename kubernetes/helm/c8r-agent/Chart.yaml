@@ -1,0 +1,12 @@
+apiVersion: v2
+appVersion: 0.2.0
+description: Cloudchipr SaaS Platform Kubernetes Agent
+icon: https://static.cloudchipr.io/logos/PNG/cloudchipr%20favicon%404x.png
+keywords:
+  - Cloudchipr
+  - Kubernetes
+  - Metrics
+kubeVersion: ">= 1.19.0-0"
+name: c8r-agent
+type: application
+version: 0.2.0

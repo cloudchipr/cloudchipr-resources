@@ -1,0 +1,46 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "..fullname" . }}
+  namespace: {{ include "..namespace" . }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+rules:
+  - apiGroups: ["*"]
+    resources:
+      - "nodes"
+      - "nodes/metrics"
+      - "nodes/stats"
+      - "nodes/pods"
+      - "nodes/proxy"
+      - "pods"
+      - "persistentvolumeclaims"
+      - "persistentvolumes"
+      - "namespaces"
+      - "deployments"
+      - "replicasets"
+      - "statefulsets"
+      - "daemonsets"
+      - "jobs"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+      - "create"
+      - "update"
+      - "patch"
+      - "delete"
+    resourceNames:
+      - "cloudchipr"
+      - "c8r"
+      - "cloudchipr-agent"
+      - "c8r-agent"
