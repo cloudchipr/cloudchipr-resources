@@ -28,9 +28,15 @@ serviceAccount:
   annotations: {}
 
 ## @param auth.c8r_api_key Token to authenticate with Cloudchipr API. Required if `existingSecret` is not provided.
-## @param auth.existingSecret Existing secret to use for the API key, it must have `c8r_api_key` key.
+## @param auth.c8r_cluster_id Cluster ID to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.
+## @param auth.c8r_cluster_name Cluster name to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.
+## @param auth.c8r_cloud_account Cloud account to identify the cluster in Cloudchipr UI. Required if `existingSecret` is not provided.
+## @param auth.existingSecret Existing secret to use for the API key, it must have all keys from `auth` in uppercase, like C8R_API_KEY, C8R_CLUSTER_ID, C8R_CLOUD_ACCOUNT, C8R_CLUSTER_NAME.
 auth:
   c8r_api_key: ""
+  c8r_cluster_id: ""
+  c8r_cluster_name: ""
+  c8r_cloud_account: ""
   existingSecret: ""
 
 ## @param labels Extra labels for the deployment.
