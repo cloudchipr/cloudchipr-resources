@@ -1,2 +1,0 @@
-# cloudchipr-resources
-Cloudchipr resources
