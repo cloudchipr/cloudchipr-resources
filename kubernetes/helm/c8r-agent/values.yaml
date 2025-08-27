@@ -65,13 +65,30 @@ affinity: {}
 ## @param tolerations Tolerations for pod assignment (Optional).
 tolerations: []
 
-## @param resources Resource requests and limits for the container.
-resources: {}
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
-  #   ephemeral-storage: "64Mi"
+## @param resources.requests.cpu CPU request for the container.
+## @param resources.requests.memory Memory request for the container.
+## @param resources.requests.ephemeral-storage Ephemeral storage request for the container.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+    ephemeral-storage: "128Mi"
   # limits:
   #   cpu: 500m
   #   memory: 512Mi
-  #   ephemeral-storage: "64Mi"
+  #   ephemeral-storage: "128Mi"
+
+## @param securityContext.allowPrivilegeEscalation Allow privilege escalation for the container.
+## @param securityContext.readOnlyRootFilesystem Read only root filesystem for the container.
+## @param securityContext.runAsNonRoot Run as non root user for the container.
+## @param securityContext.capabilities.drop Drop all capabilities for the container.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+## @param podSecurityContext Security context for the pod.
+podSecurityContext: {}

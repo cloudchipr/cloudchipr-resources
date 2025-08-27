@@ -8,7 +8,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
 rules:
-  - apiGroups: ["*"]
+  - apiGroups: [""]
     resources:
       - "nodes"
       - "nodes/metrics"
@@ -19,10 +19,22 @@ rules:
       - "persistentvolumeclaims"
       - "persistentvolumes"
       - "namespaces"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups: ["apps"]
+    resources:
       - "deployments"
       - "replicasets"
       - "statefulsets"
       - "daemonsets"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups: ["batch"]
+    resources:
       - "jobs"
     verbs:
       - "get"

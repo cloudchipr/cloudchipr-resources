@@ -60,3 +60,14 @@ Allow the release namespace to be overridden for multi-namespace deployment in c
 {{- .Release.Namespace }}
 {{- end }}
 {{- end }}
+
+{{/*
+Allow the release namespace to be overridden for multi-namespace deployment in combined charts
+*/}}
+{{- define "..serviceAccountName" -}}
+{{- if .Values.serviceAccount.name }}
+{{- .Values.serviceAccount.name }}
+{{- else }}
+{{- include "..fullname" . }}
+{{- end }}
+{{- end }}
