@@ -18,7 +18,7 @@ metadata:
     app.kubernetes.io/name: c8r-agent
     app.kubernetes.io/instance: c8r-agent
 rules:
-  - apiGroups: ["*"]
+  - apiGroups: [""]
     resources:
       - "nodes"
       - "nodes/metrics"
@@ -29,10 +29,22 @@ rules:
       - "persistentvolumeclaims"
       - "persistentvolumes"
       - "namespaces"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups: ["apps"]
+    resources:
       - "deployments"
       - "replicasets"
       - "statefulsets"
       - "daemonsets"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups: ["batch"]
+    resources:
       - "jobs"
     verbs:
       - "get"
@@ -96,6 +108,15 @@ spec:
         - name: c8r-agent
           image: quay.io/cloudchipr/c8r-agent:latest
           imagePullPolicy: Always
-          envFrom:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+              ephemeral-storage: 1Gi
+            envFrom:
             - secretRef:
                 name: c8r-agent

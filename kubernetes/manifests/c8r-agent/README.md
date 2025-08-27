@@ -13,7 +13,8 @@
 - Create secret with cloudchipr api key:
 
   ```bash
-  kubectl create secret generic c8r \
+  kubectl create secret generic c8r-agent \
+    --namespace cloudchipr \
     --from-literal C8R_API_KEY=<REPLACE_WITH_API_KEY> \
     --from-literal C8R_CLUSTER_ID=<REPLACE_WITH_RANDOM_UUID> \
     --from-literal C8R_CLOUD_ACCOUNT=<REPLACE_WITH_CLOUD_ACCOUNT> \
