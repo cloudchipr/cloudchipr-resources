@@ -20,6 +20,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources:
+      - "metrics"
       - "nodes"
       - "nodes/metrics"
       - "nodes/stats"
