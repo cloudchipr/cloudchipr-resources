@@ -3,9 +3,9 @@ entries:
   c8r-agent:
   - apiVersion: v2
     appVersion: 0.2.0
-    created: "2025-08-26T22:52:40.907830938+04:00"
+    created: "2025-09-16T14:46:44.748464366+04:00"
     description: Cloudchipr SaaS Platform Kubernetes Agent
-    digest: 528785c1eff9b323e1cb4063a6d857c69d0d8d2475db51ae6319843a3fb5cd48
+    digest: 4751375facaa1208370498a012ccd45d189fc32538336cc0e1ad445d7f07b171
     icon: https://static.cloudchipr.io/logos/PNG/cloudchipr%20favicon%404x.png
     keywords:
     - Cloudchipr
@@ -17,4 +17,4 @@ entries:
     urls:
     - c8r-agent-0.2.0.tgz
     version: 0.2.0
-generated: "2025-08-26T22:52:40.907330795+04:00"
+generated: "2025-09-16T14:46:44.748008136+04:00"
