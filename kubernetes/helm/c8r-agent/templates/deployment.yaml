@@ -48,8 +48,8 @@ spec:
         {{- end }}
         envFrom:
           - secretRef:
-              {{- if .Values.auth.existingSecret }}
-              name: {{ .Values.auth.existingSecret }}
+              {{- if .Values.config.existingSecret }}
+              name: {{ .Values.config.existingSecret }}
               {{- else }}
               name: {{ include "..fullname" . }}
               {{- end }}

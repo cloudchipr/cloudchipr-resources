@@ -33,10 +33,10 @@ Run the following command to install the chart
 
 ```bash
 helm upgrade -i c8r-agent -n cloudchipr --create-namespace cloudchipr/c8r-agent \
-  --set auth.c8r_api_key=<REPLACE_WITH_API_KEY>
-  --set auth.c8r_cluster_id=<REPLACE_WITH_RANDOM_UUID>
-  --set auth.c8r_cluster_name=<REPLACE_WITH_CLUSTER_ANME>
-  --set auth.c8r_cloud_account=<REPLACE_WITH_CLOUD_ACCOUNT>
+  --set config.c8r_api_key=<REPLACE_WITH_API_KEY>
+  --set config.c8r_cluster_id=<REPLACE_WITH_RANDOM_UUID>
+  --set config.c8r_cluster_name=<REPLACE_WITH_CLUSTER_ANME>
+  --set config.c8r_cloud_account=<REPLACE_WITH_CLOUD_ACCOUNT>
 ```
 
 To uninstall the chart:
@@ -62,11 +62,11 @@ kubectl delete namespace cloudchipr
 | `serviceAccount.name`                      | service account name to create                                                                        | `c8r-agent`            |
 | `serviceAccount.labels`                    | service account labels                                                                                | `{}`                   |
 | `serviceAccount.annotations`               | service account annotations                                                                           | `{}`                   |
-| `auth.c8r_api_key`                         | Token to authenticate with Cloudchipr API. Required if `existingSecret` is not provided.              | `""`                   |
-| `auth.c8r_cluster_id`                      | Cluster ID to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.       | `""`                   |
-| `auth.c8r_cluster_name`                    | Cluster name to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.     | `""`                   |
-| `auth.c8r_cloud_account`                   | Cloud account to identify the cluster in Cloudchipr UI. Required if `existingSecret` is not provided. | `""`                   |
-| `auth.existingSecret`                      | Existing secret to use for the API key, it must have all keys from `auth`                             | `""`                   |
+| `config.c8r_api_key`                       | Token to authenticate with Cloudchipr API. Required if `existingSecret` is not provided.              | `""`                   |
+| `config.c8r_cluster_id`                    | Cluster ID to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.       | `""`                   |
+| `config.c8r_cluster_name`                  | Cluster name to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.     | `""`                   |
+| `config.c8r_cloud_account`                 | Cloud account to identify the cluster in Cloudchipr UI. Required if `existingSecret` is not provided. | `""`                   |
+| `config.existingSecret`                    | Existing secret to use for the API key, it must have all keys from `config`                           | `""`                   |
 | `labels`                                   | Extra labels for the deployment.                                                                      | `{}`                   |
 | `annotations`                              | Annotations for the deployment.                                                                       | `{}`                   |
 | `podLabels`                                | Extra labels for the pod.                                                                             | `{}`                   |
