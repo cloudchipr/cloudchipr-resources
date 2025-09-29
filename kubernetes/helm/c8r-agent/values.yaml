@@ -81,11 +81,13 @@ resources:
 ## @param securityContext.allowPrivilegeEscalation Allow privilege escalation for the container.
 ## @param securityContext.readOnlyRootFilesystem Read only root filesystem for the container.
 ## @param securityContext.runAsNonRoot Run as non root user for the container.
+## @param securityContext.runAsUser Run as 10001 user for the container.
 ## @param securityContext.capabilities.drop Drop all capabilities for the container.
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: false
   runAsNonRoot: true
+  runAsUser: 10001
   capabilities:
     drop:
       - ALL

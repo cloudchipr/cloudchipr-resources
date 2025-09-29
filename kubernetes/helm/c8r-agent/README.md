@@ -80,6 +80,7 @@ kubectl delete namespace cloudchipr
 | `securityContext.allowPrivilegeEscalation` | Allow privilege escalation for the container.                                                                                   | `false`                |
 | `securityContext.readOnlyRootFilesystem`   | Read only root filesystem for the container.                                                                                    | `false`                |
 | `securityContext.runAsNonRoot`             | Run as non root user for the container.                                                                                         | `true`                 |
+| `securityContext.runAsUser`                | Run as 10001 user for the container.                                                                                            | `10001`                |
 | `securityContext.capabilities.drop`        | Drop all capabilities for the container.                                                                                        | `["ALL"]`              |
 | `podSecurityContext`                       | Security context for the pod.                                                                                                   | `{}`                   |
 | `addEnvFrom`                               | Add envFrom to the container.                                                                                                   | `[]`                   |
