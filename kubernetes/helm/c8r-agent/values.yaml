@@ -92,3 +92,15 @@ securityContext:
 
 ## @param podSecurityContext Security context for the pod.
 podSecurityContext: {}
+
+## @param addEnvFrom Add envFrom to the container.
+addEnvFrom: []
+  # - secretRef:
+  #     name: my-secret
+  # - configMapRef:
+  #     name: my-configmap
+
+## @param addEnv Add env to the container.
+addEnv: []
+  # - name: KEY
+  #   value: VALUE

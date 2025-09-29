@@ -82,3 +82,5 @@ kubectl delete namespace cloudchipr
 | `securityContext.runAsNonRoot`             | Run as non root user for the container.                                                                                         | `true`                 |
 | `securityContext.capabilities.drop`        | Drop all capabilities for the container.                                                                                        | `["ALL"]`              |
 | `podSecurityContext`                       | Security context for the pod.                                                                                                   | `{}`                   |
+| `addEnvFrom`                               | Add envFrom to the container.                                                                                                   | `[]`                   |
+| `addEnv`                                   | Add env to the container.                                                                                                       | `[]`                   |
