@@ -2,6 +2,7 @@ apiVersion: v2
 appVersion: 0.2.0
 description: Cloudchipr SaaS Platform Kubernetes Agent
 icon: https://static.cloudchipr.io/logos/PNG/cloudchipr%20favicon%404x.png
+home: https://cloudchipr.com
 keywords:
   - Cloudchipr
   - Kubernetes
