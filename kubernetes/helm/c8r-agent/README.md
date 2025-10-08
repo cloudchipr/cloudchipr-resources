@@ -57,7 +57,7 @@ kubectl delete namespace cloudchipr
 | `replicas`                                 | Number of replicas for the deployment.                                                                                          | `1`                    |
 | `image.registry`                           | Registry to use for the image.                                                                                                  | `quay.io`              |
 | `image.repository`                         | Image repository to use for the image.                                                                                          | `cloudchipr/c8r-agent` |
-| `image.tag`                                | Image tag to use for the image. Default is `latest`.                                                                            | `v2.1.0`               |
+| `image.tag`                                | Image tag to use for the image. Default is `latest`.                                                                            | `v2.2.0`               |
 | `image.pullPolicy`                         | Image pull policy to use for the image. Default is `Always`.                                                                    | `Always`               |
 | `serviceAccount.name`                      | service account name to create                                                                                                  | `c8r-agent`            |
 | `serviceAccount.labels`                    | service account labels                                                                                                          | `{}`                   |
