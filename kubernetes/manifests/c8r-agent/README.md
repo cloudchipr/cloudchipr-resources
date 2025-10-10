@@ -2,7 +2,7 @@
 
 ## Installation
 
-- Create Api key in [Cloudchipr UI](https://app.cloudchipr.com/settings/api-keys)
+- Create Api key in [Cloudchipr Platform](https://app.cloudchipr.com/settings/api-keys)
 
 - Create namespace for cloudchipr agent
 
