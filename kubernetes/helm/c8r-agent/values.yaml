@@ -13,7 +13,7 @@ replicas: 1
 image:
   registry: quay.io
   repository: cloudchipr/c8r-agent
-  tag: "v2.6.0"
+  tag: "v2.7.0"
   pullPolicy: Always
 ## @param serviceAccount.name service account name to create
 ## @param serviceAccount.labels service account labels
