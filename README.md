@@ -1,6 +1,6 @@
 # cloudchipr-resources
 
-Cloudchipr resources
+[Cloudchipr](https://cloudchipr.com) resources
 
 ## Kubernetes
 
