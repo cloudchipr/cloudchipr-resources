@@ -8,12 +8,12 @@ namespaceOverride: ""
 replicas: 1
 ## @param image.registry Registry to use for the image.
 ## @param image.repository Image repository to use for the image.
-## @param image.tag Image tag to use for the image. Default is `latest`.
+## @param image.tag Image tag to use for the image. Default is `.Chart.AppVersion`.
 ## @param image.pullPolicy Image pull policy to use for the image. Default is `Always`.
 image:
   registry: quay.io
   repository: cloudchipr/c8r-agent
-  tag: "latest"
+  tag: ""
   pullPolicy: Always
 ## @param serviceAccount.name service account name to create
 ## @param serviceAccount.labels service account labels
