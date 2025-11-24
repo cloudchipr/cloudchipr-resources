@@ -58,7 +58,7 @@ spec:
       {{- end }}
       containers:
       - name: c8r-agent
-        image: {{ printf "%s/%s:%s" .Values.image.registry .Values.image.repository .Values.image.tag }}
+        image: {{ printf "%s/%s:%s" .Values.image.registry .Values.image.repository ( default .Chart.AppVersion .Values.image.tag) }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         {{- with .Values.securityContext }}
         securityContext:
