@@ -79,6 +79,8 @@ spec:
                 fieldPath: metadata.name
           - name: C8R_CHART_VERSION
             value: {{ .Chart.Version | quote }}
+          - name: C8R_HELM_RELEASE_NAME
+            value: {{ .Release.Name }}
         {{- with .Values.addEnv }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
