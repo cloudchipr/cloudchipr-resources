@@ -1,3 +1,4 @@
+{{ $createSecret := (include "..createSecret" .) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,9 +9,9 @@ metadata:
     {{- with .Values.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- if or (not .Values.config.existingSecret) .Values.annotations }}
+  {{- if or (eq $createSecret "true") .Values.annotations }}
   annotations:
-  {{- if not .Values.config.existingSecret }}
+  {{- if eq $createSecret "true" }}
     checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
   {{- end }}
   {{- with .Values.annotations }}
@@ -28,9 +29,9 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- if or (not .Values.config.existingSecret) .Values.podAnnotations }}
+      {{- if or (eq $createSecret "true") .Values.podAnnotations }}
       annotations:
-      {{- if not .Values.config.existingSecret }}
+      {{- if eq $createSecret "true" }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       {{- end }}
       {{- with .Values.podAnnotations }}
@@ -84,13 +85,18 @@ spec:
         {{- with .Values.addEnv }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
+        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.addEnvFrom }}
         envFrom:
+          {{- if .Values.config.existingSecret }}
           - secretRef:
-              {{- if .Values.config.existingSecret }}
               name: {{ .Values.config.existingSecret }}
-              {{- else }}
-              name: {{ include "..fullname" . }}
-              {{- end }}
-          {{- with .Values.addEnvFrom }}
-            {{- toYaml . | nindent 10 }}
           {{- end }}
+          {{- if eq $createSecret "true" }}
+          - secretRef:
+              name: {{ include "..fullname" . }}
+          {{- end }}
+          {{- with .Values.addEnvFrom }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- end }}
+

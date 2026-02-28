@@ -22,19 +22,20 @@ serviceAccount:
   name: c8r-agent
   labels: {}
   annotations: {}
-## @param config.c8r_api_key Token to authenticate with Cloudchipr API. Required if `existingSecret` is not provided.
-## @param config.c8r_cluster_id Cluster ID to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.
-## @param config.c8r_cluster_name Cluster name to identify the cluster in Cloudchipr. Required if `existingSecret` is not provided.
-## @param config.c8r_cloud_account Cloud account identifier, e.g. AWS account id, GCP project id, Azure subscriptoin name. Required if `existingSecret` is not provided.
-## @param config.existingSecret Existing secret to use for the API key, it must have all keys from `config`
+## @param config.c8r_api_key Token to authenticate with Cloudchipr API. Can be set in existing secret as C8R_API_KEY.
+## @param config.c8r_cluster_id Cluster ID to identify the cluster in Cloudchipr. Can be set in existing secret as C8R_CLUSTER_ID.
+## @param config.c8r_cluster_name Cluster name to identify the cluster in Cloudchipr. Can be set in existing secret as C8R_CLUSTER_NAME.
+## @param config.c8r_cloud_account Cloud account identifier, e.g. AWS account id, GCP project id, Azure subscription name. Can be set in existing secret as C8R_CLOUD_ACCOUNT.
+## @param config.existingSecret Existing secret to use for the API key, it must have all keys from `config`.
+# -- parameters from config section and config.existingSecret will be merged, config parameters have precedence over existingSecret.
 config:
   # -- generate from https://app.cloudchipr.com/settings/api-keys
   c8r_api_key: ""
-  # -- generate with `uuidgen` command
+  # -- should be valid UUID, can be generated with `uuidgen` command
   c8r_cluster_id: ""
-  # -- user friendly name for the cluster to see in Cloudchipr UI
+  # -- name for the cluster, will be visible in Cloudchipr UI
   c8r_cluster_name: ""
-  # -- cloud account identifier, e.g. AWS account id, GCP project id, Azure subscriptoin name
+  # -- cloud account identifier, e.g. AWS account id, GCP project id, Azure subscription name
   c8r_cloud_account: ""
   # -- all the keys must be in uppercase, like C8R_API_KEY, C8R_CLUSTER_ID, C8R_CLOUD_ACCOUNT, C8R_CLUSTER_NAME
   existingSecret: ""

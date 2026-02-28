@@ -71,3 +71,12 @@ Allow the release namespace to be overridden for multi-namespace deployment in c
 {{- include "..fullname" . }}
 {{- end }}
 {{- end }}
+
+{{- define "..createSecret" -}}
+{{- if or .Values.config.c8r_cluster_name .Values.config.c8r_cloud_account .Values.config.c8r_api_key .Values.config.c8r_cluster_id -}}
+{{- "true" }}
+{{- else }}
+{{- "false" }}
+{{- end }}
+{{- end }}
+
