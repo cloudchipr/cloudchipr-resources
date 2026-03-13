@@ -51,7 +51,6 @@ rules:
       - "get"
       - "list"
       - "watch"
-      - "create"
       - "update"
       - "patch"
       - "delete"
@@ -60,3 +59,7 @@ rules:
       - "c8r"
       - "cloudchipr-agent"
       - "c8r-agent"
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs:
+      - "create"

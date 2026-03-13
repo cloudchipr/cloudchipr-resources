@@ -19,6 +19,7 @@ metadata:
   {{- end }}
   {{- end }}
 spec:
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
       {{- include "..selectorLabels" . | nindent 6 }}
@@ -106,11 +107,9 @@ spec:
         command:
           - c8r-networkagent-server
         ports:
-          {{- if .Values.networkCollection.server.enableMetrics }}
           - containerPort: 8873
             protocol: TCP
             name: metrics
-          {{- end }}
           - containerPort: 8874
             protocol: TCP
             name: grpc
@@ -123,19 +122,15 @@ spec:
           {{- toYaml . | nindent 12 }}
         {{- end }}
         livenessProbe:
-          tcpSocket:
-            port: grpc
-          initialDelaySeconds: 30
+          failureThreshold: 3
+          httpGet:
+            path: /live
+            port: metrics
+            scheme: HTTP
+          initialDelaySeconds: 60
           periodSeconds: 30
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          tcpSocket:
-            port: grpc
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          successThreshold: 1
+          timeoutSeconds: 10
         env:
           - name: POD_NAMESPACE
             valueFrom:

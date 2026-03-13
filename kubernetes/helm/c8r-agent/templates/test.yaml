@@ -3,8 +3,10 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: "{{ .Release.Name }}-test"
+  namespace: {{ include "..namespace" . }}
   annotations:
     "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded
 spec:
   template:
     spec:
