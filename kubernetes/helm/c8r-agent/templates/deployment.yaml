@@ -99,4 +99,54 @@ spec:
           {{- toYaml . | nindent 10 }}
           {{- end }}
         {{- end }}
+      {{- if .Values.networkCollection.enabled }}
+      - name: c8r-network-agent
+        image: {{ printf "%s/%s:%s" .Values.image.registry .Values.image.repository ( default .Chart.AppVersion .Values.image.tag) }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - c8r-networkagent-server
+        ports:
+          {{- if .Values.networkCollection.server.enableMetrics }}
+          - containerPort: 8873
+            protocol: TCP
+            name: metrics
+          {{- end }}
+          - containerPort: 8874
+            protocol: TCP
+            name: grpc
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- with .Values.networkCollection.server.resources }}
+        resources:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        env:
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+        {{- with .Values.networkCollection.server.addEnv }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.addEnvFrom }}
+        envFrom:
+          {{- if .Values.config.existingSecret }}
+          - secretRef:
+              name: {{ .Values.config.existingSecret }}
+          {{- end }}
+          {{- if eq $createSecret "true" }}
+          - secretRef:
+              name: {{ include "..fullname" . }}
+          {{- end }}
+          {{- with .Values.networkCollection.server.addEnvFrom }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
 

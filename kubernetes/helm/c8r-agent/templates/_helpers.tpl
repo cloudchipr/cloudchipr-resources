@@ -51,6 +51,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Selector labels for collector
+*/}}
+{{- define "..collectorSelectorLabels" -}}
+app.kubernetes.io/name: {{ include "..name" . }}-collector
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
 Allow the release namespace to be overridden for multi-namespace deployment in combined charts
 */}}
 {{- define "..namespace" -}}

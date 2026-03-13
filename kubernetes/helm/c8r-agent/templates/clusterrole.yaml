@@ -20,6 +20,10 @@ rules:
       - "persistentvolumeclaims"
       - "persistentvolumes"
       - "namespaces"
+      {{- if .Values.networkCollection.enabled }}
+      - "endpoints"
+      - "services"
+      {{- end }}
     verbs:
       - "get"
       - "list"
