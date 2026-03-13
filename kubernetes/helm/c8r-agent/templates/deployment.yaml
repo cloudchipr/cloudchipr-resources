@@ -122,6 +122,20 @@ spec:
         resources:
           {{- toYaml . | nindent 12 }}
         {{- end }}
+        livenessProbe:
+          tcpSocket:
+            port: grpc
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          tcpSocket:
+            port: grpc
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -134,7 +148,7 @@ spec:
         {{- with .Values.networkCollection.server.addEnv }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
-        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.addEnvFrom }}
+        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.networkCollection.server.addEnvFrom }}
         envFrom:
           {{- if .Values.config.existingSecret }}
           - secretRef:
