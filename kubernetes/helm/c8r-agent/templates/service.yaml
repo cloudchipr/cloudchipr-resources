@@ -1,0 +1,38 @@
+{{- if .Values.networkCollection.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "..fullname" . }}
+  namespace: {{ include "..namespace" . }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if or .Values.networkCollection.server.enableMetrics .Values.annotations }}
+  annotations:
+    {{- if .Values.networkCollection.server.enableMetrics }}
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8873"
+    prometheus.io/path: "/metrics"
+    {{- end }}
+  {{- with .Values.annotations }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "..selectorLabels" . | nindent 4 }}
+  ports:
+    {{- if .Values.networkCollection.server.enableMetrics }}
+    - port: 8873
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
+    - port: 8874
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+{{- end }}

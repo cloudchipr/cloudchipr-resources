@@ -19,6 +19,7 @@ metadata:
   {{- end }}
   {{- end }}
 spec:
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
       {{- include "..selectorLabels" . | nindent 6 }}
@@ -99,4 +100,62 @@ spec:
           {{- toYaml . | nindent 10 }}
           {{- end }}
         {{- end }}
+      {{- if .Values.networkCollection.enabled }}
+      - name: c8r-network-agent
+        image: {{ printf "%s/%s:%s" .Values.image.registry .Values.image.repository ( default .Chart.AppVersion .Values.image.tag) }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - c8r-networkagent-server
+        ports:
+          - containerPort: 8873
+            protocol: TCP
+            name: metrics
+          - containerPort: 8874
+            protocol: TCP
+            name: grpc
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        {{- with .Values.networkCollection.server.resources }}
+        resources:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /live
+            port: metrics
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 10
+        env:
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+        {{- with .Values.networkCollection.server.addEnv }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.networkCollection.server.addEnvFrom }}
+        envFrom:
+          {{- if .Values.config.existingSecret }}
+          - secretRef:
+              name: {{ .Values.config.existingSecret }}
+          {{- end }}
+          {{- if eq $createSecret "true" }}
+          - secretRef:
+              name: {{ include "..fullname" . }}
+          {{- end }}
+          {{- with .Values.networkCollection.server.addEnvFrom }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
 

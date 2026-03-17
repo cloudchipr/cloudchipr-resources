@@ -1,0 +1,166 @@
+{{- if .Values.networkCollection.enabled }}
+{{ $createSecret := (include "..createSecret" .) }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "..fullname" . }}-collector
+  namespace: {{ include "..namespace" . }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if or (eq $createSecret "true") .Values.annotations }}
+  annotations:
+  {{- if eq $createSecret "true" }}
+    checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+  {{- end }}
+  {{- with .Values.annotations }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "..collectorSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "..collectorSelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if or (eq $createSecret "true") .Values.podAnnotations }}
+      annotations:
+      {{- if eq $createSecret "true" }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      {{- end }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
+    spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- with .Values.networkCollection.collector.nodeSelector | default .Values.nodeSelector }}
+      nodeSelector:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.networkCollection.collector.affinity | default .Values.affinity }}
+      affinity:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.networkCollection.collector.tolerations | default .Values.tolerations }}
+      tolerations:
+      {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "..serviceAccountName" . }}
+      initContainers:
+      - name: enable-conntrack
+        image: busybox:1.36
+        imagePullPolicy: IfNotPresent
+        command:
+          - /bin/sh
+          - -c
+          - |
+            echo "Enabling conntrack accounting..."
+            if [ -f /proc/sys/net/netfilter/nf_conntrack_acct ]; then
+              echo 1 > /proc/sys/net/netfilter/nf_conntrack_acct
+              echo "Done. Current value: $(cat /proc/sys/net/netfilter/nf_conntrack_acct)"
+            else
+              echo "Warning: nf_conntrack_acct not found, conntrack module may not be loaded"
+            fi
+        securityContext:
+          privileged: true
+      containers:
+      - name: collector
+        image: {{ printf "%s/%s:%s" .Values.image.registry .Values.image.repository ( default .Chart.AppVersion .Values.image.tag) }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - c8r-networkagent-collector
+        ports:
+          - containerPort: 8873
+            protocol: TCP
+            name: metrics
+        securityContext:
+          readOnlyRootFilesystem: true
+          runAsUser: 0
+          capabilities:
+            add:
+              - NET_ADMIN
+            drop:
+              - ALL
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: metrics
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: metrics
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+        {{- with .Values.networkCollection.collector.resources }}
+        resources:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        env:
+          - name: GOMAXPROCS
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.cpu
+                divisor: "1"
+          - name: GOMEMLIMIT
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.memory
+                divisor: "1"
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: COLLECTION_INTERVAL
+            value: {{ .Values.networkCollection.collector.collectionInterval | default "5s" | quote }}
+          - name: SKIP_CONNTRACK_SANITY_CHECK
+            value: {{ .Values.networkCollection.collector.skipConntrackSanityCheck | default "false" | quote }}
+          - name: KUBENETMON_SERVER_SERVICE_HOST
+            value: {{ printf "%s.%s.svc.cluster.local" (include "..fullname" .) (include "..namespace" .) }}
+          - name: KUBENETMON_SERVER_SERVICE_PORT
+            value: "8874"
+          - name: METRICS_PORT
+            value: "8873"
+          - name: UPTIME_WAIT_DURATION
+            value: {{ .Values.networkCollection.collector.uptimeWaitDuration | default "300s" | quote }}
+        {{- with .Values.networkCollection.collector.addEnv }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.networkCollection.collector.addEnvFrom }}
+        envFrom:
+          {{- if .Values.config.existingSecret }}
+          - secretRef:
+              name: {{ .Values.config.existingSecret }}
+          {{- end }}
+          {{- if eq $createSecret "true" }}
+          - secretRef:
+              name: {{ include "..fullname" . }}
+          {{- end }}
+          {{- with .Values.networkCollection.collector.addEnvFrom }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+        {{- end }}
+{{- end }}

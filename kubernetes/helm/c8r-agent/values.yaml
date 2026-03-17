@@ -62,7 +62,6 @@ resources:
     memory: 128Mi
     ephemeral-storage: "128Mi"
     # limits:
-    #   cpu: 500m
     #   memory: 512Mi
     #   ephemeral-storage: "128Mi"
 ## @param securityContext.allowPrivilegeEscalation Allow privilege escalation for the container.
@@ -91,3 +90,67 @@ addEnvFrom: []
 addEnv: []
 # - name: KEY
 #   value: VALUE
+
+networkCollection:
+  ## @param networkCollection.enabled enable network agent to collect networking data
+  enabled: false
+  server:
+    ## @param networkCollection.server.enableMetrics enable metrics port and add prometheus scrape annotations to service
+    enableMetrics: false
+    ## @param networkCollection.server.resources.requests.cpu cpu request for network agent container
+    ## @param networkCollection.server.resources.requests.memory memory request for network agent container
+    ## @param networkCollection.server.resources.requests.ephemeral-storage node ephemeral storage request request for network agent container
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "512Mi"
+        ephemeral-storage: "64Mi"
+      # limits:
+      #   memory: "1Gi"
+    ## @param networkCollection.server.addEnvFrom Add envFrom to the network agent container.
+    addEnvFrom: []
+    # - secretRef:
+    #     name: my-secret
+    # - configMapRef:
+    #     name: my-configmap
+    ## @param networkCollection.server.addEnv Add env to the network agent container.
+    addEnv: []
+    # - name: KEY
+    #   value: VALUE
+  collector:
+    ## @param networkCollection.collector.collectionInterval interval for collecting network data
+    collectionInterval: "5s"
+    ## @param networkCollection.collector.skipConntrackSanityCheck skip conntrack sanity check
+    skipConntrackSanityCheck: "false"
+    ## @param networkCollection.collector.uptimeWaitDuration duration to wait for uptime before collecting
+    uptimeWaitDuration: "300s"
+    ## @param networkCollection.collector.nodeSelector Node Selector labels for collector pod assignment.
+    nodeSelector: {}
+    ## @param networkCollection.collector.affinity Affinity settings for collector pod assignment.
+    affinity: {}
+    ## @skip networkCollection.collector.tolerations[0] Tolerations for collector pod assignment.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    ## @param networkCollection.collector.resources.requests.cpu cpu request for network agent container
+    ## @param networkCollection.collector.resources.requests.memory memory request for network agent container
+    ## @param networkCollection.collector.resources.requests.ephemeral-storage node ephemeral storage request request for network agent container
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+        ephemeral-storage: "64Mi"
+      # limits:
+      #   cpu: "1"
+      #   memory: "128Mi"
+    ## @param networkCollection.collector.addEnvFrom Add envFrom to the network agent container.
+    addEnvFrom: []
+    # - secretRef:
+    #     name: my-secret
+    # - configMapRef:
+    #     name: my-configmap
+    ## @param networkCollection.collector.addEnv Add env to the network agent container.
+    addEnv: []
+    # - name: KEY
+    #   value: VALUE
