@@ -50,7 +50,15 @@ podAnnotations: {}
 ## @param nodeSelector Node Selector labels for pod assignment.
 nodeSelector: {}
 ## @param affinity Affinity settings for pod assignment.
-affinity: {}
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: eks.amazonaws.com/compute-type
+              operator: NotIn
+              values:
+                - fargate
 ## @param tolerations Tolerations for pod assignment (Optional).
 tolerations: []
 ## @param resources.requests.cpu CPU request for the container.
