@@ -50,15 +50,7 @@ podAnnotations: {}
 ## @param nodeSelector Node Selector labels for pod assignment.
 nodeSelector: {}
 ## @param affinity Affinity settings for pod assignment.
-affinity:
-  nodeAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      nodeSelectorTerms:
-        - matchExpressions:
-            - key: eks.amazonaws.com/compute-type
-              operator: NotIn
-              values:
-                - fargate
+affinity: {}
 ## @param tolerations Tolerations for pod assignment (Optional).
 tolerations: []
 ## @param resources.requests.cpu CPU request for the container.
@@ -134,8 +126,16 @@ networkCollection:
     uptimeWaitDuration: "300s"
     ## @param networkCollection.collector.nodeSelector Node Selector labels for collector pod assignment.
     nodeSelector: {}
-    ## @param networkCollection.collector.affinity Affinity settings for collector pod assignment.
-    affinity: {}
+    ## @skip networkCollection.collector.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0] Affinity settings for collector pod assignment.
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: eks.amazonaws.com/compute-type
+                  operator: NotIn
+                  values:
+                    - fargate
     ## @skip networkCollection.collector.tolerations[0] Tolerations for collector pod assignment.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
