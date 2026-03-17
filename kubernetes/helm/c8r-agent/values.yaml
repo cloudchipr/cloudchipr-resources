@@ -92,14 +92,14 @@ addEnv: []
 #   value: VALUE
 
 networkCollection:
-  ## @param networkAgent.enabled enable network agent to collect networking data
+  ## @param networkCollection.enabled enable network agent to collect networking data
   enabled: false
   server:
-    ## @param networkAgent.server.enableMetrics enable metrics port and add prometheus scrape annotations to service
+    ## @param networkCollection.server.enableMetrics enable metrics port and add prometheus scrape annotations to service
     enableMetrics: false
-    ## @param networkAgent.server.resources.requests.cpu cpu request for network agent container
-    ## @param networkAgent.server.resources.requests.memory memory request for network agent container
-    ## @param networkAgent.server.resources.requests.ephemeral-storage node ephemeral storage request request for network agent container
+    ## @param networkCollection.server.resources.requests.cpu cpu request for network agent container
+    ## @param networkCollection.server.resources.requests.memory memory request for network agent container
+    ## @param networkCollection.server.resources.requests.ephemeral-storage node ephemeral storage request request for network agent container
     resources:
       requests:
         cpu: "100m"
@@ -107,13 +107,13 @@ networkCollection:
         ephemeral-storage: "64Mi"
       # limits:
       #   memory: "1Gi"
-    ## @param networkAgent.server.addEnvFrom Add envFrom to the network agent container.
+    ## @param networkCollection.server.addEnvFrom Add envFrom to the network agent container.
     addEnvFrom: []
     # - secretRef:
     #     name: my-secret
     # - configMapRef:
     #     name: my-configmap
-    ## @param networkAgent.server.addEnv Add env to the network agent container.
+    ## @param networkCollection.server.addEnv Add env to the network agent container.
     addEnv: []
     # - name: KEY
     #   value: VALUE
@@ -128,7 +128,7 @@ networkCollection:
     nodeSelector: {}
     ## @param networkCollection.collector.affinity Affinity settings for collector pod assignment.
     affinity: {}
-    ## @param networkCollection.collector.tolerations Tolerations for collector pod assignment.
+    ## @skip networkCollection.collector.tolerations[0] Tolerations for collector pod assignment.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
