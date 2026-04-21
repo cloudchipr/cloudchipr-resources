@@ -29,14 +29,25 @@ helm repo update cloudchipr
 
 ## How to install
 
-Run the following command to install the chart
+Run the following command to install the chart with network collection enabled:
 
 ```bash
-helm upgrade -i c8r-agent -n cloudchipr --create-namespace cloudchipr/c8r-agent \
-  --set "config.c8r_api_key=<REPLACE_WITH_API_KEY>" \
-  --set "config.c8r_cluster_id=<REPLACE_WITH_RANDOM_UUID>" \
-  --set "config.c8r_cluster_name=<REPLACE_WITH_CLUSTER_NAME>" \
-  --set "config.c8r_cloud_account=<REPLACE_WITH_CLOUD_ACCOUNT>"
+helm upgrade --install c8r-agent -n cloudchipr --create-namespace cloudchipr/c8r-agent \
+  --set-string "config.c8r_api_key=<REPLACE_WITH_API_KEY>" \
+  --set-string "config.c8r_cluster_id=<REPLACE_WITH_RANDOM_UUID>" \
+  --set-string "config.c8r_cluster_name=<REPLACE_WITH_CLUSTER_NAME>" \
+  --set-string "config.c8r_cloud_account=<REPLACE_WITH_CLOUD_ACCOUNT>" \
+  --set networkCollection.enabled="true"
+```
+
+Run the following command to install the chart without network collection enabled:
+
+```bash
+helm upgrade --install c8r-agent -n cloudchipr --create-namespace cloudchipr/c8r-agent \
+  --set-string "config.c8r_api_key=<REPLACE_WITH_API_KEY>" \
+  --set-string "config.c8r_cluster_id=<REPLACE_WITH_RANDOM_UUID>" \
+  --set-string "config.c8r_cluster_name=<REPLACE_WITH_CLUSTER_NAME>" \
+  --set-string "config.c8r_cloud_account=<REPLACE_WITH_CLOUD_ACCOUNT>"
 ```
 
 To uninstall the chart:
