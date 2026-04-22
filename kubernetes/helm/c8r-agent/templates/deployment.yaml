@@ -140,10 +140,13 @@ spec:
             valueFrom:
               fieldRef:
                 fieldPath: metadata.name
+        {{- with .Values.addEnv }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         {{- with .Values.networkCollection.server.addEnv }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
-        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.networkCollection.server.addEnvFrom }}
+        {{- if or .Values.config.existingSecret (eq $createSecret "true") .Values.addEnvFrom .Values.networkCollection.server.addEnvFrom }}
         envFrom:
           {{- if .Values.config.existingSecret }}
           - secretRef:
@@ -152,6 +155,9 @@ spec:
           {{- if eq $createSecret "true" }}
           - secretRef:
               name: {{ include "..fullname" . }}
+          {{- end }}
+          {{- with .Values.addEnvFrom }}
+          {{- toYaml . | nindent 10 }}
           {{- end }}
           {{- with .Values.networkCollection.server.addEnvFrom }}
           {{- toYaml . | nindent 10 }}
