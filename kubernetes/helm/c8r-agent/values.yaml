@@ -91,6 +91,24 @@ addEnv: []
 # - name: KEY
 #   value: VALUE
 
+## @param autoscaling.enabled Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.
+## @param autoscaling.minReplicas Minimum number of replicas.
+## @param autoscaling.maxReplicas Maximum number of replicas.
+## @param autoscaling.targetCPUUtilizationPercentage Target average CPU utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the CPU metric.
+## @param autoscaling.targetMemoryUtilizationPercentage Target average memory utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the memory metric.
+## @param autoscaling.behavior HPA scaling behavior (scaleUp/scaleDown policies). Passed through as-is.
+## @param autoscaling.annotations Annotations for the HorizontalPodAutoscaler.
+## @param autoscaling.labels Extra labels for the HorizontalPodAutoscaler.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+  behavior: {}
+  annotations: {}
+  labels: {}
+
 networkCollection:
   ## @param networkCollection.enabled enable network agent to collect networking data
   enabled: false
