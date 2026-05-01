@@ -1,0 +1,188 @@
+suite: HorizontalPodAutoscaler
+templates:
+  - templates/hpa.yaml
+release:
+  name: my-release
+tests:
+  - it: renders nothing when autoscaling.hpa.enabled=false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: fails when HPA enabled without networkCollection
+    set:
+      autoscaling.hpa.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.hpa.enabled requires networkCollection.enabled=true: the HPA scales on the c8r-network-agent container, which only exists when network collection is enabled."
+
+  - it: renders an HPA targeting the deployment and the c8r-network-agent container
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.scaleTargetRef.name
+          value: my-release-c8r-agent
+      - equal:
+          path: spec.minReplicas
+          value: 1
+      - equal:
+          path: spec.maxReplicas
+          value: 10
+      - equal:
+          path: spec.metrics[0].containerResource.container
+          value: c8r-network-agent
+      - equal:
+          path: spec.metrics[0].containerResource.name
+          value: cpu
+      - equal:
+          path: spec.metrics[0].containerResource.target.averageUtilization
+          value: 80
+      - equal:
+          path: spec.metrics[1].containerResource.name
+          value: memory
+
+  - it: omits the CPU metric when targetCPUUtilizationPercentage is null
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.targetCPUUtilizationPercentage: null
+    asserts:
+      - lengthEqual:
+          path: spec.metrics
+          count: 1
+      - equal:
+          path: spec.metrics[0].containerResource.name
+          value: memory
+
+  - it: omits the memory metric when targetMemoryUtilizationPercentage is null
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.targetMemoryUtilizationPercentage: null
+    asserts:
+      - lengthEqual:
+          path: spec.metrics
+          count: 1
+      - equal:
+          path: spec.metrics[0].containerResource.name
+          value: cpu
+
+  - it: passes through behavior verbatim
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 10
+              periodSeconds: 60
+    asserts:
+      - equal:
+          path: spec.behavior.scaleDown.stabilizationWindowSeconds
+          value: 300
+      - equal:
+          path: spec.behavior.scaleDown.policies[0].type
+          value: Percent
+
+  - it: omits behavior when empty
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+    asserts:
+      - notExists:
+          path: spec.behavior
+
+  - it: merges block-specific labels with common and deployment labels
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      labels:
+        deploy-label: deploy-val
+      autoscaling.hpa.labels:
+        hpa-label: hpa-val
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: c8r-agent
+      - equal:
+          path: metadata.labels.deploy-label
+          value: deploy-val
+      - equal:
+          path: metadata.labels.hpa-label
+          value: hpa-val
+
+  - it: renders annotations only when set
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.annotations:
+        my-annotation: my-value
+    asserts:
+      - equal:
+          path: metadata.annotations.my-annotation
+          value: my-value
+
+  - it: omits annotations when empty
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  - it: fails when both target utilizations are null (would render an empty metrics list)
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.targetCPUUtilizationPercentage: null
+      autoscaling.hpa.targetMemoryUtilizationPercentage: null
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.hpa requires at least one of targetCPUUtilizationPercentage or targetMemoryUtilizationPercentage to be set: an HPA with an empty metrics list is rejected by the Kubernetes API."
+
+  - it: respects custom minReplicas and maxReplicas
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.minReplicas: 3
+      autoscaling.hpa.maxReplicas: 50
+    asserts:
+      - equal:
+          path: spec.minReplicas
+          value: 3
+      - equal:
+          path: spec.maxReplicas
+          value: 50
+
+  # Parent-map nil-safety — chart must not crash if a user (or umbrella chart)
+  # nullifies the autoscaling subtree. All three render cleanly with no HPA.
+  - it: renders nothing when autoscaling.hpa is null
+    set:
+      autoscaling.hpa: null
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when autoscaling is null
+    set:
+      autoscaling: null
+    asserts:
+      - hasDocuments:
+          count: 0

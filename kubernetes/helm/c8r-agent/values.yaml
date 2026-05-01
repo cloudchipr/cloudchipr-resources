@@ -163,22 +163,104 @@ networkCollection:
     # - name: KEY
     #   value: VALUE
 
-## @param autoscaling.enabled Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.
-## @param autoscaling.minReplicas Minimum number of replicas.
-## @param autoscaling.maxReplicas Maximum number of replicas.
-## @param autoscaling.targetCPUUtilizationPercentage Target average CPU utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the CPU metric.
-## @param autoscaling.targetMemoryUtilizationPercentage Target average memory utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the memory metric.
-## @param autoscaling.behavior HPA scaling behavior (scaleUp/scaleDown policies). Passed through as-is.
-## @param autoscaling.annotations Annotations for the HorizontalPodAutoscaler.
-## @param autoscaling.labels Extra labels for the HorizontalPodAutoscaler.
+## @param autoscaling.hpa.enabled Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.
+## @param autoscaling.hpa.minReplicas Minimum number of replicas.
+## @param autoscaling.hpa.maxReplicas Maximum number of replicas.
+## @param autoscaling.hpa.targetCPUUtilizationPercentage Target average CPU utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the CPU metric.
+## @param autoscaling.hpa.targetMemoryUtilizationPercentage Target average memory utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the memory metric.
+## @param autoscaling.hpa.behavior HPA scaling behavior (scaleUp/scaleDown policies). Passed through as-is.
+## @param autoscaling.hpa.annotations Annotations for the HorizontalPodAutoscaler.
+## @param autoscaling.hpa.labels Extra labels for the HorizontalPodAutoscaler.
+## @param autoscaling.vpa.deployment.enabled Enable VerticalPodAutoscaler for the deployment. Requires the VPA controller (autoscaling.k8s.io) to be installed in the cluster.
+## @param autoscaling.vpa.deployment.updateMode VPA update mode for the deployment: `Off` (recommend only), `Initial`, `Recreate`, or `Auto`. When `autoscaling.hpa.enabled=true` this must be `Off` unless `autoscaling.vpa.deployment.networkAgent.mode` is `Off` (the per-container escape hatch).
+## @param autoscaling.vpa.deployment.minReplicas Minimum replicas required before VPA will evict pods. Set to `null` to use the controller default.
+## @param autoscaling.vpa.deployment.annotations Annotations for the deployment VerticalPodAutoscaler.
+## @param autoscaling.vpa.deployment.labels Extra labels for the deployment VerticalPodAutoscaler.
+## @param autoscaling.vpa.deployment.agent.mode Per-container update mode for the `c8r-agent` container: `Off` to opt this container out of automatic updates. Empty inherits `updateMode`.
+## @param autoscaling.vpa.deployment.agent.minAllowed Minimum allowed resources for `c8r-agent` (e.g. `{cpu: 100m, memory: 128Mi}`).
+## @param autoscaling.vpa.deployment.agent.maxAllowed Maximum allowed resources for `c8r-agent`.
+## @param autoscaling.vpa.deployment.agent.controlledResources Resources VPA will manage on `c8r-agent`. Empty defers to the VPA controller default (`["cpu", "memory"]`).
+## @param autoscaling.vpa.deployment.agent.controlledValues What VPA controls on `c8r-agent`: `RequestsAndLimits` or `RequestsOnly`. Empty defers to the controller default.
+## @param autoscaling.vpa.deployment.networkAgent.mode Per-container update mode for the `c8r-network-agent` container. Set to `Off` when `autoscaling.hpa.enabled=true` so HPA can scale on this container's CPU/memory without VPA fighting it.
+## @param autoscaling.vpa.deployment.networkAgent.minAllowed Minimum allowed resources for `c8r-network-agent`.
+## @param autoscaling.vpa.deployment.networkAgent.maxAllowed Maximum allowed resources for `c8r-network-agent`.
+## @param autoscaling.vpa.deployment.networkAgent.controlledResources Resources VPA will manage on `c8r-network-agent`.
+## @param autoscaling.vpa.deployment.networkAgent.controlledValues What VPA controls on `c8r-network-agent`.
+## @param autoscaling.vpa.collector.enabled Enable VerticalPodAutoscaler for the network collector DaemonSet. Requires `networkCollection.enabled=true`.
+## @param autoscaling.vpa.collector.updateMode VPA update mode for the collector: `Off` (recommend only), `Initial`, `Recreate`, or `Auto`.
+## @param autoscaling.vpa.collector.minReplicas Minimum replicas required before VPA will evict collector pods. Set to `null` to use the controller default.
+## @param autoscaling.vpa.collector.annotations Annotations for the collector VerticalPodAutoscaler.
+## @param autoscaling.vpa.collector.labels Extra labels for the collector VerticalPodAutoscaler.
+## @param autoscaling.vpa.collector.mode Per-container update mode for the `collector` container.
+## @param autoscaling.vpa.collector.minAllowed Minimum allowed resources for the `collector` container.
+## @param autoscaling.vpa.collector.maxAllowed Maximum allowed resources for the `collector` container.
+## @param autoscaling.vpa.collector.controlledResources Resources VPA will manage on the `collector` container.
+## @param autoscaling.vpa.collector.controlledValues What VPA controls on the `collector` container.
 autoscaling:
-  # Requires networkCollection.enabled=true — the HPA scales on the
-  # c8r-network-agent container, which only exists when network collection is on.
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 80
-  targetMemoryUtilizationPercentage: 80
-  behavior: {}
-  annotations: {}
-  labels: {}
+  hpa:
+    # Requires networkCollection.enabled=true — the HPA scales on the
+    # c8r-network-agent container, which only exists when network collection is on.
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+    behavior: {}
+    annotations: {}
+    labels: {}
+  vpa:
+    deployment:
+      # The Deployment Pod has two containers (c8r-agent and c8r-network-agent
+      # when networkCollection is on). The `agent` and `networkAgent`
+      # subsections each render as one entry in the VPA's
+      # resourcePolicy.containerPolicies.
+      #
+      # When autoscaling.hpa.enabled=true, the HPA scales replicas on
+      # c8r-network-agent CPU/memory. To avoid a request/replica feedback
+      # loop, EITHER set updateMode to "Off" (recommend-only across both
+      # containers) OR set networkAgent.mode to "Off" (lets VPA still
+      # manage c8r-agent in Auto mode while keeping HPA's container
+      # untouched).
+      enabled: false
+      updateMode: "Off"
+      minReplicas: null
+      annotations: {}
+      labels: {}
+      agent:
+        # `Off` | `Initial` | `Recreate` | `Auto`. Empty inherits updateMode.
+        mode: ""
+        minAllowed: {}
+        # cpu: 100m
+        # memory: 128Mi
+        maxAllowed: {}
+        # cpu: "1"
+        # memory: 1Gi
+        controlledResources: []
+        # - cpu
+        # - memory
+        controlledValues: ""  # RequestsAndLimits | RequestsOnly
+      networkAgent:
+        mode: ""
+        minAllowed: {}
+        maxAllowed: {}
+        controlledResources: []
+        controlledValues: ""
+    collector:
+      # Requires networkCollection.enabled=true — the collector DaemonSet only
+      # exists when network collection is on. The DaemonSet has a single
+      # container (`collector`); the `mode`/`minAllowed`/etc. fields below
+      # render as a single entry in the VPA's resourcePolicy.containerPolicies.
+      enabled: false
+      updateMode: "Off"
+      minReplicas: null
+      annotations: {}
+      labels: {}
+      mode: ""
+      minAllowed: {}
+      # cpu: 50m
+      # memory: 64Mi
+      maxAllowed: {}
+      # cpu: "1"
+      # memory: 256Mi
+      controlledResources: []
+      controlledValues: ""

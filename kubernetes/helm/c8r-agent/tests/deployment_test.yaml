@@ -1,0 +1,527 @@
+suite: Deployment
+templates:
+  - templates/deployment.yaml
+  - templates/secret.yaml
+release:
+  name: my-release
+  namespace: cloudchipr
+tests:
+  - it: renders a single Deployment with the right kind, apiVersion and name
+    template: templates/deployment.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+      - equal:
+          path: apiVersion
+          value: apps/v1
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: metadata.namespace
+          value: cloudchipr
+
+  - it: honors namespaceOverride
+    set:
+      namespaceOverride: custom-ns
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: custom-ns
+
+  - it: honors nameOverride in fullname
+    set:
+      nameOverride: my-app
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-release-my-app
+
+  - it: builds image as registry/repository:tag using AppVersion when tag is empty
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/cloudchipr/c8r-agent:v3.3.0
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  - it: overrides image tag, registry, repository and pullPolicy
+    set:
+      image.registry: my-registry.io
+      image.repository: my/c8r
+      image.tag: v9.9.9
+      image.pullPolicy: IfNotPresent
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: my-registry.io/my/c8r:v9.9.9
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+
+  - it: renders replicas when HPA is disabled
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: omits replicas when HPA is enabled
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+    template: templates/deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.replicas
+
+  - it: respects custom replicas value
+    set:
+      replicas: 5
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 5
+
+  - it: replicas still render when autoscaling is null (parent-map nil-safety)
+    set:
+      autoscaling: null
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: replicas still render when autoscaling.hpa is null
+    set:
+      autoscaling.hpa: null
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: only has the c8r-agent container when networkCollection is disabled
+    template: templates/deployment.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: c8r-agent
+
+  - it: adds c8r-network-agent container when networkCollection is enabled
+    set:
+      networkCollection.enabled: true
+    template: templates/deployment.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 2
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: c8r-network-agent
+      - equal:
+          path: spec.template.spec.containers[1].command[0]
+          value: c8r-networkagent-server
+      - equal:
+          path: spec.template.spec.containers[1].ports[0].containerPort
+          value: 8873
+      - equal:
+          path: spec.template.spec.containers[1].ports[0].name
+          value: metrics
+      - equal:
+          path: spec.template.spec.containers[1].ports[1].containerPort
+          value: 8874
+      - equal:
+          path: spec.template.spec.containers[1].ports[1].name
+          value: grpc
+      - equal:
+          path: spec.template.spec.containers[1].livenessProbe.httpGet.port
+          value: metrics
+      - equal:
+          path: spec.template.spec.containers[1].livenessProbe.httpGet.path
+          value: /live
+
+  - it: applies securityContext to the c8r-agent container
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 10001
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
+          value: ALL
+
+  - it: omits podSecurityContext when empty
+    template: templates/deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.securityContext
+
+  - it: renders podSecurityContext when set
+    set:
+      podSecurityContext:
+        fsGroup: 2000
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.fsGroup
+          value: 2000
+
+  - it: renders nodeSelector, affinity and tolerations
+    set:
+      nodeSelector:
+        disktype: ssd
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values: ["linux"]
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: cloudchipr
+          effect: NoSchedule
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: ssd
+      - exists:
+          path: spec.template.spec.affinity
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+
+  - it: omits nodeSelector, affinity and tolerations when empty
+    template: templates/deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+      - notExists:
+          path: spec.template.spec.affinity
+      - notExists:
+          path: spec.template.spec.tolerations
+
+  - it: includes POD_NAMESPACE, POD_NAME, C8R_CHART_VERSION and C8R_HELM_RELEASE_NAME env
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: POD_NAMESPACE
+      - equal:
+          path: spec.template.spec.containers[0].env[0].valueFrom.fieldRef.fieldPath
+          value: metadata.namespace
+      - equal:
+          path: spec.template.spec.containers[0].env[2].name
+          value: C8R_CHART_VERSION
+      - equal:
+          path: spec.template.spec.containers[0].env[2].value
+          value: 4.0.0
+      - equal:
+          path: spec.template.spec.containers[0].env[3].name
+          value: C8R_HELM_RELEASE_NAME
+      - equal:
+          path: spec.template.spec.containers[0].env[3].value
+          value: my-release
+
+  - it: appends user-provided addEnv to the c8r-agent container
+    set:
+      addEnv:
+        - name: MY_VAR
+          value: my-value
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[4].name
+          value: MY_VAR
+      - equal:
+          path: spec.template.spec.containers[0].env[4].value
+          value: my-value
+
+  - it: appends global and server-specific addEnv to c8r-network-agent
+    set:
+      networkCollection.enabled: true
+      addEnv:
+        - name: GLOBAL_VAR
+          value: g
+      networkCollection.server.addEnv:
+        - name: SERVER_VAR
+          value: s
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: GLOBAL_VAR
+            value: g
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: SERVER_VAR
+            value: s
+
+  - it: omits envFrom when no secret and no addEnvFrom
+    template: templates/deployment.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: renders envFrom when config fields create the secret
+    set:
+      config.c8r_api_key: a-key
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-release-c8r-agent
+
+  - it: renders envFrom for existingSecret without creating the secret
+    set:
+      config.existingSecret: my-shared-secret
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-shared-secret
+
+  - it: renders both existingSecret and chart-managed secret in envFrom
+    set:
+      config.existingSecret: my-shared-secret
+      config.c8r_api_key: a-key
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-shared-secret
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[1].secretRef.name
+          value: my-release-c8r-agent
+
+  - it: appends addEnvFrom after secret refs
+    set:
+      config.c8r_api_key: a-key
+      addEnvFrom:
+        - configMapRef:
+            name: my-cm
+    template: templates/deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: my-cm
+
+  - it: writes the secret checksum annotation when the secret is created
+    set:
+      config.c8r_api_key: a-key
+    template: templates/deployment.yaml
+    asserts:
+      - exists:
+          path: metadata.annotations["checksum/secret"]
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: omits the secret checksum annotation when no secret is created
+    template: templates/deployment.yaml
+    asserts:
+      - notExists:
+          path: metadata.annotations["checksum/secret"]
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: merges deployment-level annotations with checksum
+    set:
+      config.c8r_api_key: a-key
+      annotations:
+        my-annotation: my-value
+    template: templates/deployment.yaml
+    asserts:
+      - exists:
+          path: metadata.annotations["checksum/secret"]
+      - equal:
+          path: metadata.annotations.my-annotation
+          value: my-value
+
+  - it: merges custom labels on metadata and selector remains intact
+    set:
+      labels:
+        custom-label: custom-value
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: metadata.labels.custom-label
+          value: custom-value
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: c8r-agent
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: c8r-agent
+      - notExists:
+          path: spec.selector.matchLabels.custom-label
+
+  - it: merges podLabels onto pod template only
+    set:
+      podLabels:
+        pod-label: pod-value
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels.pod-label
+          value: pod-value
+      - notExists:
+          path: metadata.labels.pod-label
+
+  - it: serviceAccountName falls back to fullname when serviceAccount.name is empty
+    set:
+      serviceAccount.name: ""
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: my-release-c8r-agent
+
+  - it: serviceAccountName uses serviceAccount.name when set
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: c8r-agent
+
+  # .Values.resources flow-through to the c8r-agent container
+  - it: applies .Values.resources requests and limits to c8r-agent
+    set:
+      resources:
+        requests:
+          cpu: 250m
+          memory: 256Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 250m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 256Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: "1"
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 1Gi
+
+  # podAnnotations branches
+  - it: renders podAnnotations on the pod template when no secret is created
+    set:
+      podAnnotations:
+        my-pod-anno: my-pod-value
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations.my-pod-anno
+          value: my-pod-value
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: merges podAnnotations with checksum/secret when the secret is created
+    set:
+      config.c8r_api_key: a-key
+      podAnnotations:
+        my-pod-anno: my-pod-value
+    template: templates/deployment.yaml
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+      - equal:
+          path: spec.template.metadata.annotations.my-pod-anno
+          value: my-pod-value
+
+  # networkCollection.server.resources flow-through to c8r-network-agent
+  - it: applies networkCollection.server.resources to c8r-network-agent
+    set:
+      networkCollection.enabled: true
+      networkCollection.server.resources:
+        requests:
+          cpu: 200m
+          memory: 1Gi
+        limits:
+          memory: 2Gi
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].resources.requests.cpu
+          value: 200m
+      - equal:
+          path: spec.template.spec.containers[1].resources.requests.memory
+          value: 1Gi
+      - equal:
+          path: spec.template.spec.containers[1].resources.limits.memory
+          value: 2Gi
+
+  # networkCollection.server.addEnvFrom merge into c8r-network-agent
+  - it: appends server.addEnvFrom after the secret refs on c8r-network-agent
+    set:
+      networkCollection.enabled: true
+      config.c8r_api_key: a-key
+      addEnvFrom:
+        - configMapRef:
+            name: global-cm
+      networkCollection.server.addEnvFrom:
+        - configMapRef:
+            name: server-cm
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].envFrom[0].secretRef.name
+          value: my-release-c8r-agent
+      - contains:
+          path: spec.template.spec.containers[1].envFrom
+          content:
+            configMapRef:
+              name: global-cm
+      - contains:
+          path: spec.template.spec.containers[1].envFrom
+          content:
+            configMapRef:
+              name: server-cm
+
+  - it: server.addEnvFrom alone renders envFrom on c8r-network-agent without any secret refs
+    set:
+      networkCollection.enabled: true
+      networkCollection.server.addEnvFrom:
+        - configMapRef:
+            name: server-only-cm
+    template: templates/deployment.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[1].envFrom
+          count: 1
+      - equal:
+          path: spec.template.spec.containers[1].envFrom[0].configMapRef.name
+          value: server-only-cm

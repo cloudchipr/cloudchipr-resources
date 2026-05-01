@@ -1,0 +1,435 @@
+suite: DaemonSet (collector)
+templates:
+  - templates/daemonset.yaml
+  - templates/secret.yaml
+release:
+  name: my-release
+  namespace: cloudchipr
+tests:
+  - it: renders nothing when networkCollection is disabled
+    template: templates/daemonset.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a DaemonSet named <fullname>-collector when networkCollection is enabled
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: DaemonSet
+      - equal:
+          path: apiVersion
+          value: apps/v1
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent-collector
+      - equal:
+          path: metadata.namespace
+          value: cloudchipr
+
+  - it: uses host networking with ClusterFirstWithHostNet DNS policy
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.hostNetwork
+          value: true
+      - equal:
+          path: spec.template.spec.hostPID
+          value: true
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirstWithHostNet
+
+  - it: runs the enable-conntrack init container privileged
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: enable-conntrack
+      - equal:
+          path: spec.template.spec.initContainers[0].image
+          value: busybox:1.36
+      - equal:
+          path: spec.template.spec.initContainers[0].securityContext.privileged
+          value: true
+
+  - it: collector container has NET_ADMIN, drops ALL, runs as root with read-only root FS
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: collector
+      - equal:
+          path: spec.template.spec.containers[0].command[0]
+          value: c8r-networkagent-collector
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 0
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.add
+          content: NET_ADMIN
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+
+  - it: exposes the metrics port and configures liveness and readiness probes against it
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 8873
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: metrics
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: metrics
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /live
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /ready
+
+  - it: KUBENETMON_SERVER_SERVICE_HOST is built from fullname and namespace
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBENETMON_SERVER_SERVICE_HOST
+            value: my-release-c8r-agent.cloudchipr.svc.cluster.local
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBENETMON_SERVER_SERVICE_PORT
+            value: "8874"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_PORT
+            value: "8873"
+
+  - it: KUBENETMON_SERVER_SERVICE_HOST honors namespaceOverride
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      namespaceOverride: other-ns
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBENETMON_SERVER_SERVICE_HOST
+            value: my-release-c8r-agent.other-ns.svc.cluster.local
+
+  - it: collector tunables (interval, sanity check, uptime wait) flow into env vars
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      networkCollection.collector.collectionInterval: 10s
+      networkCollection.collector.skipConntrackSanityCheck: "true"
+      networkCollection.collector.uptimeWaitDuration: 600s
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COLLECTION_INTERVAL
+            value: "10s"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SKIP_CONNTRACK_SANITY_CHECK
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: UPTIME_WAIT_DURATION
+            value: "600s"
+
+  - it: GOMAXPROCS and GOMEMLIMIT come from container limits via downward API
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOMAXPROCS
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.cpu
+                divisor: "1"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOMEMLIMIT
+            valueFrom:
+              resourceFieldRef:
+                resource: limits.memory
+                divisor: "1"
+
+  - it: applies collector resources
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      networkCollection.collector.resources.requests.cpu: 200m
+      networkCollection.collector.resources.requests.memory: 256Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 200m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 256Mi
+
+  - it: defaults to the collector-specific affinity excluding fargate nodes
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: eks.amazonaws.com/compute-type
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: NotIn
+
+  - it: defaults to the collector-specific control-plane toleration
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: node-role.kubernetes.io/control-plane
+
+  - it: collector nodeSelector overrides the deployment-level nodeSelector
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      nodeSelector:
+        global: yes
+      networkCollection.collector.nodeSelector:
+        collector-only: yes
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.collector-only
+          value: "yes"
+      - notExists:
+          path: spec.template.spec.nodeSelector.global
+
+  - it: falls back to deployment-level nodeSelector when collector nodeSelector is unset
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      nodeSelector:
+        from-global: "true"
+      networkCollection.collector.nodeSelector: {}
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.from-global
+          value: "true"
+
+  - it: collector envFrom only renders existingSecret when set
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      config.existingSecret: my-shared-secret
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-shared-secret
+
+  - it: collector envFrom renders the chart-managed secret when config fields are set
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      config.c8r_api_key: a-key
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-release-c8r-agent
+
+  - it: collector envFrom appends collector-specific addEnvFrom
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      config.c8r_api_key: a-key
+      networkCollection.collector.addEnvFrom:
+        - configMapRef:
+            name: collector-cm
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: collector-cm
+
+  - it: collector envFrom is omitted when no secret refs nor addEnvFrom
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: appends collector-specific addEnv
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      networkCollection.collector.addEnv:
+        - name: COLLECTOR_FLAG
+          value: "1"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COLLECTOR_FLAG
+            value: "1"
+
+  - it: collector pod uses collector-specific selector labels
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: c8r-agent-collector
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: c8r-agent-collector
+
+  - it: serviceAccountName falls back to fullname when serviceAccount.name is empty
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      serviceAccount.name: ""
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: my-release-c8r-agent
+
+  # podAnnotations branches
+  - it: renders podAnnotations on the collector pod template when no secret is created
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      podAnnotations:
+        my-pod-anno: my-pod-value
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations.my-pod-anno
+          value: my-pod-value
+      - notExists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+
+  - it: merges podAnnotations with checksum/secret on the collector pod when the secret is created
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      config.c8r_api_key: a-key
+      podAnnotations:
+        my-pod-anno: my-pod-value
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/secret"]
+      - equal:
+          path: spec.template.metadata.annotations.my-pod-anno
+          value: my-pod-value
+
+  # Collector affinity override / fallback (mirrors the nodeSelector pattern)
+  - it: collector affinity overrides the deployment-level affinity
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: global
+                    operator: Exists
+      networkCollection.collector.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: collector-only
+                    operator: Exists
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: collector-only
+
+  - it: falls back to deployment-level affinity when collector affinity is null
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: global
+                    operator: Exists
+      networkCollection.collector.affinity: null
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: global
+
+  # Collector tolerations override / fallback
+  - it: collector tolerations override the deployment-level tolerations
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      tolerations:
+        - key: global-toleration
+          operator: Exists
+      networkCollection.collector.tolerations:
+        - key: collector-only
+          operator: Exists
+          effect: NoSchedule
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: collector-only
+
+  - it: falls back to deployment-level tolerations when collector tolerations is null
+    template: templates/daemonset.yaml
+    set:
+      networkCollection.enabled: true
+      tolerations:
+        - key: global-toleration
+          operator: Exists
+      networkCollection.collector.tolerations: null
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.tolerations
+          count: 1
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: global-toleration

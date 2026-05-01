@@ -1,0 +1,101 @@
+suite: helm-test hook Job
+templates:
+  - templates/test.yaml
+  - templates/secret.yaml
+release:
+  name: my-release
+  namespace: cloudchipr
+tests:
+  - it: renders a Job tagged as a helm test hook
+    template: templates/test.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: my-release-test
+      - equal:
+          path: metadata.namespace
+          value: cloudchipr
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: hook-succeeded
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+      - equal:
+          path: spec.backoffLimit
+          value: 0
+
+  - it: image follows the same registry/repository/tag rules as the deployment
+    set:
+      image.tag: v9.9.9
+    template: templates/test.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: quay.io/cloudchipr/c8r-agent:v9.9.9
+
+  - it: sets C8R_INIT_CHECK=true alongside chart-version env vars
+    template: templates/test.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: C8R_INIT_CHECK
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: C8R_CHART_VERSION
+            value: "4.0.0"
+
+  - it: appends user addEnv to the test container
+    set:
+      addEnv:
+        - name: TEST_FLAG
+          value: "1"
+    template: templates/test.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TEST_FLAG
+            value: "1"
+
+  - it: omits envFrom when no secret refs nor addEnvFrom
+    template: templates/test.yaml
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: renders chart-managed secret in envFrom when config fields are set
+    set:
+      config.c8r_api_key: a-key
+    template: templates/test.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-release-c8r-agent
+
+  - it: renders existingSecret + addEnvFrom together
+    set:
+      config.existingSecret: my-shared-secret
+      addEnvFrom:
+        - configMapRef:
+            name: my-cm
+    template: templates/test.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom[0].secretRef.name
+          value: my-shared-secret
+      - contains:
+          path: spec.template.spec.containers[0].envFrom
+          content:
+            configMapRef:
+              name: my-cm

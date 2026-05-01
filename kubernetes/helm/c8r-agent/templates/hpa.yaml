@@ -1,6 +1,10 @@
-{{- if .Values.autoscaling.enabled }}
+{{- $hpa := default dict (default dict .Values.autoscaling).hpa -}}
+{{- if $hpa.enabled }}
 {{- if not .Values.networkCollection.enabled -}}
-{{- fail "autoscaling.enabled requires networkCollection.enabled=true: the HPA scales on the c8r-network-agent container, which only exists when network collection is enabled." -}}
+{{- fail "autoscaling.hpa.enabled requires networkCollection.enabled=true: the HPA scales on the c8r-network-agent container, which only exists when network collection is enabled." -}}
+{{- end }}
+{{- if and (not $hpa.targetCPUUtilizationPercentage) (not $hpa.targetMemoryUtilizationPercentage) -}}
+{{- fail "autoscaling.hpa requires at least one of targetCPUUtilizationPercentage or targetMemoryUtilizationPercentage to be set: an HPA with an empty metrics list is rejected by the Kubernetes API." -}}
 {{- end }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -12,10 +16,10 @@ metadata:
     {{- with .Values.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-    {{- with .Values.autoscaling.labels }}
+    {{- with $hpa.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-  {{- with .Values.autoscaling.annotations }}
+  {{- with $hpa.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -24,10 +28,10 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: {{ include "..fullname" . }}
-  minReplicas: {{ .Values.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  minReplicas: {{ $hpa.minReplicas }}
+  maxReplicas: {{ $hpa.maxReplicas }}
   metrics:
-    {{- with .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- with $hpa.targetCPUUtilizationPercentage }}
     - type: ContainerResource
       containerResource:
         name: cpu
@@ -36,7 +40,7 @@ spec:
           type: Utilization
           averageUtilization: {{ . }}
     {{- end }}
-    {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- with $hpa.targetMemoryUtilizationPercentage }}
     - type: ContainerResource
       containerResource:
         name: memory
@@ -45,7 +49,7 @@ spec:
           type: Utilization
           averageUtilization: {{ . }}
     {{- end }}
-  {{- with .Values.autoscaling.behavior }}
+  {{- with $hpa.behavior }}
   behavior:
     {{- toYaml . | nindent 4 }}
   {{- end }}

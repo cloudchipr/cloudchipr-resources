@@ -57,6 +57,15 @@ helm uninstall c8r-agent -n c8r-agent
 kubectl delete namespace cloudchipr
 ```
 
+## Testing
+
+Template-level unit tests live in `tests/` and run with the [helm-unittest](https://github.com/helm-unittest/helm-unittest) plugin (no cluster required):
+
+```bash
+helm plugin install https://github.com/helm-unittest/helm-unittest
+helm unittest .
+```
+
 ## Parameters
 
 ### General Configuration
@@ -112,11 +121,49 @@ kubectl delete namespace cloudchipr
 | `networkCollection.collector.resources.requests.ephemeral-storage` | node ephemeral storage request request for network agent container                                                                                   | `64Mi`                 |
 | `networkCollection.collector.addEnvFrom`                           | Add envFrom to the network agent container.                                                                                                          | `[]`                   |
 | `networkCollection.collector.addEnv`                               | Add env to the network agent container.                                                                                                              | `[]`                   |
-| `autoscaling.enabled`                                              | Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.                   | `false`                |
-| `autoscaling.minReplicas`                                          | Minimum number of replicas.                                                                                                                          | `1`                    |
-| `autoscaling.maxReplicas`                                          | Maximum number of replicas.                                                                                                                          | `10`                   |
-| `autoscaling.targetCPUUtilizationPercentage`                       | Target average CPU utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the CPU metric.       | `80`                   |
-| `autoscaling.targetMemoryUtilizationPercentage`                    | Target average memory utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the memory metric. | `80`                   |
-| `autoscaling.behavior`                                             | HPA scaling behavior (scaleUp/scaleDown policies). Passed through as-is.                                                                             | `{}`                   |
-| `autoscaling.annotations`                                          | Annotations for the HorizontalPodAutoscaler.                                                                                                         | `{}`                   |
-| `autoscaling.labels`                                               | Extra labels for the HorizontalPodAutoscaler.                                                                                                        | `{}`                   |
+| `autoscaling.hpa.enabled`                                          | Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.                   | `false`                |
+| `autoscaling.hpa.minReplicas`                                      | Minimum number of replicas.                                                                                                                          | `1`                    |
+| `autoscaling.hpa.maxReplicas`                                      | Maximum number of replicas.                                                                                                                          | `10`                   |
+| `autoscaling.hpa.targetCPUUtilizationPercentage`                   | Target average CPU utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the CPU metric.       | `80`                   |
+| `autoscaling.hpa.targetMemoryUtilizationPercentage`                | Target average memory utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the memory metric. | `80`                   |
+| `autoscaling.hpa.behavior`                                         | HPA scaling behavior (scaleUp/scaleDown policies). Passed through as-is.                                                                             | `{}`                   |
+| `autoscaling.hpa.annotations`                                      | Annotations for the HorizontalPodAutoscaler.                                                                                                         | `{}`                   |
+| `autoscaling.hpa.labels`                                           | Extra labels for the HorizontalPodAutoscaler.                                                                                                        | `{}`                   |
+| `autoscaling.vpa.deployment.enabled`                               | Enable VerticalPodAutoscaler for the deployment. Requires the VPA controller (autoscaling.k8s.io) to be installed in the cluster.                    | `false`                |
+| `autoscaling.vpa.deployment.updateMode`                            | VPA update mode: `Off`, `Initial`, `Recreate`, or `Auto`. With HPA on, must be `Off` unless `networkAgent.mode` is `Off`.                            | `Off`                  |
+| `autoscaling.vpa.deployment.minReplicas`                           | Minimum replicas required before VPA will evict pods. `null` uses the controller default.                                                            | `null`                 |
+| `autoscaling.vpa.deployment.annotations`                           | Annotations for the deployment VerticalPodAutoscaler.                                                                                                | `{}`                   |
+| `autoscaling.vpa.deployment.labels`                                | Extra labels for the deployment VerticalPodAutoscaler.                                                                                               | `{}`                   |
+| `autoscaling.vpa.deployment.agent.mode`                            | Per-container update mode for `c8r-agent`. Empty inherits `updateMode`. Set to `Off` to opt this container out of updates.                           | `""`                   |
+| `autoscaling.vpa.deployment.agent.minAllowed`                      | Minimum allowed resources for `c8r-agent` (e.g. `{cpu: 100m, memory: 128Mi}`).                                                                       | `{}`                   |
+| `autoscaling.vpa.deployment.agent.maxAllowed`                      | Maximum allowed resources for `c8r-agent`.                                                                                                           | `{}`                   |
+| `autoscaling.vpa.deployment.agent.controlledResources`             | Resources VPA will manage on `c8r-agent`. Empty defers to the controller default (`["cpu","memory"]`).                                               | `[]`                   |
+| `autoscaling.vpa.deployment.agent.controlledValues`                | What VPA controls on `c8r-agent`: `RequestsAndLimits` or `RequestsOnly`. Empty defers to the controller default.                                     | `""`                   |
+| `autoscaling.vpa.deployment.networkAgent.mode`                     | Per-container update mode for `c8r-network-agent`. Set to `Off` when HPA is on so HPA can scale on this container without VPA fighting it.           | `""`                   |
+| `autoscaling.vpa.deployment.networkAgent.minAllowed`               | Minimum allowed resources for `c8r-network-agent`.                                                                                                   | `{}`                   |
+| `autoscaling.vpa.deployment.networkAgent.maxAllowed`               | Maximum allowed resources for `c8r-network-agent`.                                                                                                   | `{}`                   |
+| `autoscaling.vpa.deployment.networkAgent.controlledResources`      | Resources VPA will manage on `c8r-network-agent`.                                                                                                    | `[]`                   |
+| `autoscaling.vpa.deployment.networkAgent.controlledValues`         | What VPA controls on `c8r-network-agent`.                                                                                                            | `""`                   |
+| `autoscaling.vpa.collector.enabled`                                | Enable VerticalPodAutoscaler for the network collector DaemonSet. Requires `networkCollection.enabled=true`.                                         | `false`                |
+| `autoscaling.vpa.collector.updateMode`                             | VPA update mode for the collector: `Off`, `Initial`, `Recreate`, or `Auto`.                                                                          | `Off`                  |
+| `autoscaling.vpa.collector.minReplicas`                            | Minimum replicas required before VPA will evict collector pods. `null` uses the controller default.                                                  | `null`                 |
+| `autoscaling.vpa.collector.annotations`                            | Annotations for the collector VerticalPodAutoscaler.                                                                                                 | `{}`                   |
+| `autoscaling.vpa.collector.labels`                                 | Extra labels for the collector VerticalPodAutoscaler.                                                                                                | `{}`                   |
+| `autoscaling.vpa.collector.mode`                                   | Per-container update mode for the `collector` container.                                                                                             | `""`                   |
+| `autoscaling.vpa.collector.minAllowed`                             | Minimum allowed resources for the `collector` container.                                                                                             | `{}`                   |
+| `autoscaling.vpa.collector.maxAllowed`                             | Maximum allowed resources for the `collector` container.                                                                                             | `{}`                   |
+| `autoscaling.vpa.collector.controlledResources`                    | Resources VPA will manage on the `collector` container.                                                                                              | `[]`                   |
+| `autoscaling.vpa.collector.controlledValues`                       | What VPA controls on the `collector` container.                                                                                                      | `""`                   |
+
+## Upgrading from 3.x to 4.x
+
+Chart 4.0.0 reorganises autoscaling values under a single `autoscaling` key. Update your overrides as follows:
+
+| 3.x key                          | 4.x key                                |
+| -------------------------------- | -------------------------------------- |
+| `autoscaling.enabled`            | `autoscaling.hpa.enabled`              |
+| `autoscaling.minReplicas`        | `autoscaling.hpa.minReplicas`          |
+| `autoscaling.maxReplicas`        | `autoscaling.hpa.maxReplicas`          |
+| `autoscaling.target*`            | `autoscaling.hpa.target*`              |
+| `autoscaling.behavior`           | `autoscaling.hpa.behavior`             |
+| `autoscaling.annotations/labels` | `autoscaling.hpa.annotations/labels`   |

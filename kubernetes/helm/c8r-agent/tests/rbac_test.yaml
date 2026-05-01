@@ -1,0 +1,242 @@
+suite: RBAC and ServiceAccount
+templates:
+  - templates/serviceaccount.yaml
+  - templates/role.yaml
+  - templates/rolebinding.yaml
+  - templates/clusterrole.yaml
+  - templates/clusterrolebinding.yaml
+release:
+  name: my-release
+  namespace: cloudchipr
+tests:
+  # ServiceAccount
+  - it: ServiceAccount uses serviceAccount.name and the release namespace
+    template: templates/serviceaccount.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: c8r-agent
+      - equal:
+          path: metadata.namespace
+          value: cloudchipr
+      - equal:
+          path: automountServiceAccountToken
+          value: true
+
+  - it: ServiceAccount falls back to fullname when serviceAccount.name is empty
+    set:
+      serviceAccount.name: ""
+    template: templates/serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+
+  - it: ServiceAccount renders annotations when set
+    set:
+      serviceAccount.annotations:
+        eks.amazonaws.com/role-arn: arn:aws:iam::1234:role/my-role
+    template: templates/serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["eks.amazonaws.com/role-arn"]
+          value: arn:aws:iam::1234:role/my-role
+
+  - it: ServiceAccount omits annotations when empty
+    template: templates/serviceaccount.yaml
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  - it: ServiceAccount merges custom labels with common labels
+    set:
+      serviceAccount.labels:
+        sa-label: sa-value
+    template: templates/serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.labels.sa-label
+          value: sa-value
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: c8r-agent
+
+  # Role / RoleBinding
+  - it: Role grants lease lifecycle in the release namespace
+    template: templates/role.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: metadata.namespace
+          value: cloudchipr
+      - contains:
+          path: rules[0].apiGroups
+          content: coordination.k8s.io
+      - contains:
+          path: rules[0].resources
+          content: leases
+      - contains:
+          path: rules[0].verbs
+          content: get
+      - contains:
+          path: rules[0].verbs
+          content: create
+      - contains:
+          path: rules[0].verbs
+          content: delete
+
+  - it: RoleBinding binds the Role to the ServiceAccount
+    template: templates/rolebinding.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: RoleBinding
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: roleRef.kind
+          value: Role
+      - equal:
+          path: roleRef.name
+          value: my-release-c8r-agent
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: c8r-agent
+      - equal:
+          path: subjects[0].namespace
+          value: cloudchipr
+
+  - it: RoleBinding subject name follows serviceAccountName fallback
+    set:
+      serviceAccount.name: ""
+    template: templates/rolebinding.yaml
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: my-release-c8r-agent
+
+  # ClusterRole / ClusterRoleBinding
+  - it: ClusterRole has read access to core workload resources without endpoints/services by default
+    template: templates/clusterrole.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - notExists:
+          path: metadata.namespace
+      - contains:
+          path: rules[0].resources
+          content: pods
+      - contains:
+          path: rules[0].resources
+          content: nodes
+      - contains:
+          path: rules[0].resources
+          content: namespaces
+      - notContains:
+          path: rules[0].resources
+          content: endpoints
+      - notContains:
+          path: rules[0].resources
+          content: services
+
+  - it: ClusterRole adds endpoints and services when networkCollection is enabled
+    set:
+      networkCollection.enabled: true
+    template: templates/clusterrole.yaml
+    asserts:
+      - contains:
+          path: rules[0].resources
+          content: endpoints
+      - contains:
+          path: rules[0].resources
+          content: services
+
+  - it: ClusterRole grants apps and batch read access
+    template: templates/clusterrole.yaml
+    asserts:
+      - contains:
+          path: rules[1].apiGroups
+          content: apps
+      - contains:
+          path: rules[1].resources
+          content: deployments
+      - contains:
+          path: rules[1].resources
+          content: daemonsets
+      - contains:
+          path: rules[2].apiGroups
+          content: batch
+      - contains:
+          path: rules[2].resources
+          content: jobs
+
+  - it: ClusterRole has scoped lease lifecycle by resourceNames and a separate create rule
+    template: templates/clusterrole.yaml
+    asserts:
+      - contains:
+          path: rules[3].resourceNames
+          content: cloudchipr
+      - contains:
+          path: rules[3].resourceNames
+          content: c8r-agent
+      - contains:
+          path: rules[3].verbs
+          content: delete
+      - contains:
+          path: rules[4].verbs
+          content: create
+
+  - it: ClusterRoleBinding binds the ClusterRole to the ServiceAccount in the release namespace
+    template: templates/clusterrolebinding.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: my-release-c8r-agent
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: c8r-agent
+      - equal:
+          path: subjects[0].namespace
+          value: cloudchipr
+
+  - it: ClusterRoleBinding subject namespace honors namespaceOverride
+    set:
+      namespaceOverride: other-ns
+    template: templates/clusterrolebinding.yaml
+    asserts:
+      - equal:
+          path: subjects[0].namespace
+          value: other-ns

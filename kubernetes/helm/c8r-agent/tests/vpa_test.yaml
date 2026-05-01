@@ -1,0 +1,504 @@
+suite: VerticalPodAutoscaler
+templates:
+  - templates/vpa.yaml
+release:
+  name: my-release
+tests:
+  - it: renders nothing when both VPAs are disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: fails when collector VPA enabled without networkCollection
+    set:
+      autoscaling.vpa.collector.enabled: true
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.vpa.collector.enabled requires networkCollection.enabled=true: the collector DaemonSet only exists when network collection is enabled."
+
+  - it: fails when networkAgent has overrides but networkCollection is off
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.networkAgent.minAllowed:
+        cpu: 100m
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.vpa.deployment.networkAgent.* settings require networkCollection.enabled=true: c8r-network-agent only exists in the Deployment Pod when network collection is on, so any policy on it would silently target a non-existent container."
+
+  - it: fails when networkAgent.mode is set to Off without networkCollection
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.networkAgent.mode: "Off"
+    asserts:
+      - failedTemplate:
+          errorMessage: "autoscaling.vpa.deployment.networkAgent.* settings require networkCollection.enabled=true: c8r-network-agent only exists in the Deployment Pod when network collection is on, so any policy on it would silently target a non-existent container."
+
+  - it: agent overrides without networkCollection are allowed (c8r-agent always exists)
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.mode: Auto
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-agent
+
+  - it: nil agent subsection renders without errors (helper is nil-safe)
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent: null
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.resourcePolicy
+
+  - it: nil networkAgent subsection renders without errors
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.networkAgent: null
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.resourcePolicy
+
+  - it: fails when HPA is on, deployment VPA mode is Auto, and networkAgent.mode is unset
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.updateMode: Auto
+    asserts:
+      - failedTemplate:
+          errorMessage: 'When autoscaling.hpa.enabled=true, EITHER autoscaling.vpa.deployment.updateMode must be "Off" OR autoscaling.vpa.deployment.networkAgent.mode must be "Off". HPA scales replicas on c8r-network-agent CPU/memory; running VPA on the same container creates a request/replica feedback loop. Use updateMode=Off for recommendations across both containers, set networkAgent.mode=Off to keep VPA active on c8r-agent only, or disable HPA.'
+
+  - it: allows HPA + deployment VPA Auto when networkAgent.mode=Off (per-container escape hatch)
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.updateMode: Auto
+      autoscaling.vpa.deployment.networkAgent.mode: "Off"
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: VerticalPodAutoscaler
+      - equal:
+          path: spec.updatePolicy.updateMode
+          value: Auto
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-network-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+          value: "Off"
+
+  - it: allows HPA + deployment VPA when updateMode=Off (broad escape hatch)
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: spec.updatePolicy.updateMode
+          value: "Off"
+
+  - it: deployment VPA targets the Deployment with no resourcePolicy when no per-container overrides
+    set:
+      autoscaling.vpa.deployment.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: VerticalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: spec.targetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.targetRef.name
+          value: my-release-c8r-agent
+      - equal:
+          path: spec.updatePolicy.updateMode
+          value: "Off"
+      - notExists:
+          path: spec.updatePolicy.minReplicas
+      - notExists:
+          path: spec.resourcePolicy
+
+  - it: collector VPA targets the DaemonSet
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent-collector
+      - equal:
+          path: spec.targetRef.kind
+          value: DaemonSet
+      - equal:
+          path: spec.targetRef.name
+          value: my-release-c8r-agent-collector
+      - notExists:
+          path: spec.resourcePolicy
+
+  - it: renders both VPAs when both enabled
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.collector.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 2
+      - documentIndex: 0
+        equal:
+          path: spec.targetRef.kind
+          value: Deployment
+      - documentIndex: 1
+        equal:
+          path: spec.targetRef.kind
+          value: DaemonSet
+
+  - it: deployment VPA renders minReplicas when set
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.minReplicas: 2
+    asserts:
+      - equal:
+          path: spec.updatePolicy.minReplicas
+          value: 2
+
+  - it: collector VPA renders minReplicas when set
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+      autoscaling.vpa.collector.minReplicas: 3
+    asserts:
+      - equal:
+          path: spec.updatePolicy.minReplicas
+          value: 3
+
+  # Per-container subsection rendering — agent
+  - it: renders only the c8r-agent containerPolicies entry when only agent has overrides
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.mode: Auto
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+          value: Auto
+
+  - it: agent subsection renders min/max bounds, controlledResources and controlledValues
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.minAllowed:
+        cpu: 100m
+        memory: 128Mi
+      autoscaling.vpa.deployment.agent.maxAllowed:
+        cpu: "1"
+        memory: 1Gi
+      autoscaling.vpa.deployment.agent.controlledResources:
+        - cpu
+        - memory
+      autoscaling.vpa.deployment.agent.controlledValues: RequestsOnly
+    asserts:
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].minAllowed.cpu
+          value: 100m
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].maxAllowed.memory
+          value: 1Gi
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].controlledResources[0]
+          value: cpu
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].controlledValues
+          value: RequestsOnly
+
+  # Per-container subsection rendering — networkAgent
+  - it: renders only the c8r-network-agent containerPolicies entry when only networkAgent has overrides
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.networkAgent.mode: "Off"
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-network-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+          value: "Off"
+
+  - it: renders both containerPolicies entries with c8r-agent first when both have overrides
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.mode: Auto
+      autoscaling.vpa.deployment.networkAgent.mode: "Off"
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 2
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+          value: Auto
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[1].containerName
+          value: c8r-network-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[1].mode
+          value: "Off"
+
+  # Collector single-container policy
+  - it: collector renders containerPolicies entry when mode is set
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+      autoscaling.vpa.collector.mode: Auto
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: collector
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+          value: Auto
+
+  - it: collector renders min/max bounds without mode
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+      autoscaling.vpa.collector.minAllowed:
+        cpu: 50m
+        memory: 64Mi
+      autoscaling.vpa.collector.maxAllowed:
+        cpu: "1"
+        memory: 256Mi
+      autoscaling.vpa.collector.controlledValues: RequestsOnly
+    asserts:
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: collector
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].minAllowed.memory
+          value: 64Mi
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].maxAllowed.cpu
+          value: "1"
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].controlledValues
+          value: RequestsOnly
+      - notExists:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+
+  # Label & annotation merging
+  - it: merges block-specific labels with common and deployment labels (deployment VPA)
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      labels:
+        deploy-label: deploy-val
+      autoscaling.vpa.deployment.labels:
+        vpa-label: vpa-val
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: c8r-agent
+      - equal:
+          path: metadata.labels.deploy-label
+          value: deploy-val
+      - equal:
+          path: metadata.labels.vpa-label
+          value: vpa-val
+
+  - it: renders annotations only when set (collector VPA)
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+      autoscaling.vpa.collector.annotations:
+        my-annotation: my-value
+    asserts:
+      - equal:
+          path: metadata.annotations.my-annotation
+          value: my-value
+
+  - it: omits annotations when empty (deployment VPA)
+    set:
+      autoscaling.vpa.deployment.enabled: true
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  # Per-field truthiness in ..vpaContainerPolicy — each field must independently
+  # cause an entry to render. Guards the 5-arg `or` in the helper.
+  - it: agent renders an entry when only minAllowed is set
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.minAllowed:
+        cpu: 100m
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: c8r-agent
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].minAllowed.cpu
+          value: 100m
+      - notExists:
+          path: spec.resourcePolicy.containerPolicies[0].mode
+
+  - it: agent renders an entry when only maxAllowed is set
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.maxAllowed:
+        memory: 1Gi
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].maxAllowed.memory
+          value: 1Gi
+
+  - it: agent renders an entry when only controlledResources is set
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.controlledResources:
+        - cpu
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].controlledResources[0]
+          value: cpu
+
+  - it: agent renders an entry when only controlledValues is set
+    set:
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.agent.controlledValues: RequestsOnly
+    asserts:
+      - lengthEqual:
+          path: spec.resourcePolicy.containerPolicies
+          count: 1
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].controlledValues
+          value: RequestsOnly
+
+  # Collector VPA parity with deployment VPA
+  - it: collector updateMode flows through when non-default
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+      autoscaling.vpa.collector.updateMode: Auto
+    asserts:
+      - equal:
+          path: spec.updatePolicy.updateMode
+          value: Auto
+
+  - it: merges block-specific labels with common and deployment labels (collector VPA)
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+      labels:
+        deploy-label: deploy-val
+      autoscaling.vpa.collector.labels:
+        collector-label: collector-val
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: c8r-agent
+      - equal:
+          path: metadata.labels.deploy-label
+          value: deploy-val
+      - equal:
+          path: metadata.labels.collector-label
+          value: collector-val
+
+  - it: omits annotations when empty (collector VPA)
+    set:
+      networkCollection.enabled: true
+      autoscaling.vpa.collector.enabled: true
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  # Regression-catcher: HPA-conflict fail must be gated by vpa.deployment.enabled.
+  # If the gate is removed, this case would start failing.
+  - it: HPA-on with vpa.deployment.enabled=false does not trigger the conflict check
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.vpa.deployment.enabled: false
+      autoscaling.vpa.deployment.updateMode: Auto
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # Parent-map nil-safety — chart must not crash if any of the autoscaling parent
+  # maps are nullified. All cases render to zero VPA documents.
+  - it: renders nothing when autoscaling is null
+    set:
+      autoscaling: null
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when autoscaling.vpa is null
+    set:
+      autoscaling.vpa: null
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when autoscaling.vpa.deployment is null
+    set:
+      autoscaling.vpa.deployment: null
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: HPA conflict check tolerates a null networkAgent subsection (no nil deref)
+    set:
+      networkCollection.enabled: true
+      autoscaling.hpa.enabled: true
+      autoscaling.vpa.deployment.enabled: true
+      autoscaling.vpa.deployment.networkAgent: null
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: VerticalPodAutoscaler
+      - notExists:
+          path: spec.resourcePolicy

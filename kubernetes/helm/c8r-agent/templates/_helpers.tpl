@@ -88,3 +88,35 @@ Allow the release namespace to be overridden for multi-namespace deployment in c
 {{- end }}
 {{- end }}
 
+{{/*
+Render a single VPA containerPolicies entry from a (containerName, cfg) pair,
+or render nothing when cfg has no overrides. cfg is expected to expose:
+  mode, minAllowed, maxAllowed, controlledResources, controlledValues.
+Usage: include "..vpaContainerPolicy" (list "c8r-agent" .Values.autoscaling.vpa.deployment.agent)
+*/}}
+{{- define "..vpaContainerPolicy" -}}
+{{- $name := index . 0 -}}
+{{- $cfg := index . 1 | default dict -}}
+{{- if or $cfg.mode (gt (len ($cfg.minAllowed | default dict)) 0) (gt (len ($cfg.maxAllowed | default dict)) 0) (gt (len ($cfg.controlledResources | default list)) 0) $cfg.controlledValues }}
+- containerName: {{ $name }}
+  {{- with $cfg.mode }}
+  mode: {{ . | quote }}
+  {{- end }}
+  {{- with $cfg.minAllowed }}
+  minAllowed:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $cfg.maxAllowed }}
+  maxAllowed:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $cfg.controlledResources }}
+  controlledResources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $cfg.controlledValues }}
+  controlledValues: {{ . | quote }}
+  {{- end }}
+{{- end -}}
+{{- end -}}
+

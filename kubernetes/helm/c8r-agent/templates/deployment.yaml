@@ -19,7 +19,7 @@ metadata:
   {{- end }}
   {{- end }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not (default dict (default dict .Values.autoscaling).hpa).enabled }}
   replicas: {{ .Values.replicas }}
   {{- end }}
   selector:

@@ -1,0 +1,118 @@
+suite: Service
+templates:
+  - templates/service.yaml
+release:
+  name: my-release
+  namespace: cloudchipr
+tests:
+  - it: renders nothing when networkCollection is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a ClusterIP Service named after the chart fullname
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: metadata.name
+          value: my-release-c8r-agent
+      - equal:
+          path: metadata.namespace
+          value: cloudchipr
+
+  - it: selector matches the deployment selector labels (not the collector ones)
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: c8r-agent
+      - equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: my-release
+
+  - it: exposes only the grpc port when metrics are disabled
+    set:
+      networkCollection.enabled: true
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 1
+      - equal:
+          path: spec.ports[0].name
+          value: grpc
+      - equal:
+          path: spec.ports[0].port
+          value: 8874
+      - equal:
+          path: spec.ports[0].targetPort
+          value: grpc
+      - notExists:
+          path: metadata.annotations
+
+  - it: exposes both metrics and grpc ports when metrics are enabled
+    set:
+      networkCollection.enabled: true
+      networkCollection.server.enableMetrics: true
+    asserts:
+      - lengthEqual:
+          path: spec.ports
+          count: 2
+      - equal:
+          path: spec.ports[0].name
+          value: metrics
+      - equal:
+          path: spec.ports[0].port
+          value: 8873
+      - equal:
+          path: spec.ports[1].name
+          value: grpc
+
+  - it: adds prometheus scrape annotations only when enableMetrics is true
+    set:
+      networkCollection.enabled: true
+      networkCollection.server.enableMetrics: true
+    asserts:
+      - equal:
+          path: metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: metadata.annotations["prometheus.io/port"]
+          value: "8873"
+      - equal:
+          path: metadata.annotations["prometheus.io/path"]
+          value: /metrics
+
+  - it: merges deployment-level annotations alongside prometheus annotations
+    set:
+      networkCollection.enabled: true
+      networkCollection.server.enableMetrics: true
+      annotations:
+        my-annotation: my-value
+    asserts:
+      - equal:
+          path: metadata.annotations["prometheus.io/scrape"]
+          value: "true"
+      - equal:
+          path: metadata.annotations.my-annotation
+          value: my-value
+
+  - it: renders deployment-level annotations even when metrics are disabled
+    set:
+      networkCollection.enabled: true
+      annotations:
+        my-annotation: my-value
+    asserts:
+      - equal:
+          path: metadata.annotations.my-annotation
+          value: my-value
+      - notExists:
+          path: metadata.annotations["prometheus.io/scrape"]

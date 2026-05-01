@@ -1,0 +1,97 @@
+{{- $auto := default dict .Values.autoscaling -}}
+{{- $hpa := default dict $auto.hpa -}}
+{{- $vpa := default dict $auto.vpa -}}
+{{- $depVpa := default dict $vpa.deployment -}}
+{{- $colVpa := default dict $vpa.collector -}}
+{{- $agent := default dict $depVpa.agent -}}
+{{- $netAgent := default dict $depVpa.networkAgent -}}
+{{- if $depVpa.enabled }}
+{{- if and $hpa.enabled
+          (ne ($depVpa.updateMode | default "") "Off")
+          (ne ($netAgent.mode | default "") "Off") -}}
+{{- fail "When autoscaling.hpa.enabled=true, EITHER autoscaling.vpa.deployment.updateMode must be \"Off\" OR autoscaling.vpa.deployment.networkAgent.mode must be \"Off\". HPA scales replicas on c8r-network-agent CPU/memory; running VPA on the same container creates a request/replica feedback loop. Use updateMode=Off for recommendations across both containers, set networkAgent.mode=Off to keep VPA active on c8r-agent only, or disable HPA." -}}
+{{- end }}
+{{- $agentEntry := include "..vpaContainerPolicy" (list "c8r-agent" $agent) }}
+{{- $netAgentEntry := include "..vpaContainerPolicy" (list "c8r-network-agent" $netAgent) }}
+{{- if and (trim $netAgentEntry) (not .Values.networkCollection.enabled) -}}
+{{- fail "autoscaling.vpa.deployment.networkAgent.* settings require networkCollection.enabled=true: c8r-network-agent only exists in the Deployment Pod when network collection is on, so any policy on it would silently target a non-existent container." -}}
+{{- end }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "..fullname" . }}
+  namespace: {{ include "..namespace" . }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with $depVpa.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $depVpa.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "..fullname" . }}
+  updatePolicy:
+    updateMode: {{ $depVpa.updateMode | quote }}
+    {{- with $depVpa.minReplicas }}
+    minReplicas: {{ . }}
+    {{- end }}
+  {{- if or (trim $agentEntry) (trim $netAgentEntry) }}
+  resourcePolicy:
+    containerPolicies:
+      {{- with $agentEntry }}
+      {{- nindent 6 (trim .) }}
+      {{- end }}
+      {{- with $netAgentEntry }}
+      {{- nindent 6 (trim .) }}
+      {{- end }}
+  {{- end }}
+{{- end }}
+{{- if $colVpa.enabled }}
+{{- if not .Values.networkCollection.enabled -}}
+{{- fail "autoscaling.vpa.collector.enabled requires networkCollection.enabled=true: the collector DaemonSet only exists when network collection is enabled." -}}
+{{- end }}
+{{- $collectorEntry := include "..vpaContainerPolicy" (list "collector" $colVpa) }}
+{{- if $depVpa.enabled }}
+---
+{{- end }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "..fullname" . }}-collector
+  namespace: {{ include "..namespace" . }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with $colVpa.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $colVpa.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: DaemonSet
+    name: {{ include "..fullname" . }}-collector
+  updatePolicy:
+    updateMode: {{ $colVpa.updateMode | quote }}
+    {{- with $colVpa.minReplicas }}
+    minReplicas: {{ . }}
+    {{- end }}
+  {{- with $collectorEntry }}
+  resourcePolicy:
+    containerPolicies:
+      {{- nindent 6 (trim .) }}
+  {{- end }}
+{{- end }}
