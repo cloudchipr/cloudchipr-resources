@@ -79,6 +79,8 @@ securityContext:
       - ALL
 ## @param podSecurityContext Security context for the pod.
 podSecurityContext: {}
+## @param priorityClassName Name of an existing PriorityClass to assign to pods. The chart does not create the PriorityClass.
+priorityClassName: ""
 ## @param addEnvFrom Add envFrom to the container.
 addEnvFrom: []
 # - secretRef:
@@ -124,6 +126,8 @@ networkCollection:
     skipConntrackSanityCheck: "false"
     ## @param networkCollection.collector.uptimeWaitDuration duration to wait for uptime before collecting
     uptimeWaitDuration: "300s"
+    ## @param networkCollection.collector.priorityClassName PriorityClass for the collector DaemonSet pods. Falls back to top-level `priorityClassName` when empty.
+    priorityClassName: ""
     ## @param networkCollection.collector.nodeSelector Node Selector labels for collector pod assignment.
     nodeSelector: {}
     ## @skip networkCollection.collector.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0] Affinity settings for collector pod assignment.

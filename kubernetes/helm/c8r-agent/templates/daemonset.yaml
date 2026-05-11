@@ -40,6 +40,9 @@ spec:
       {{- end }}
       {{- end }}
     spec:
+      {{- with .Values.networkCollection.collector.priorityClassName | default .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
       hostNetwork: true
       hostPID: true
       dnsPolicy: ClusterFirstWithHostNet
