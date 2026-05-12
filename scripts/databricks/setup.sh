@@ -137,7 +137,7 @@ if [ -n "$WAREHOUSE_ID" ]; then
   echo "  Step 6 requires workspace-level authentication (browser will open again)."
   databricks auth login \
     --host "$WORKSPACE_HOST" \
-    --profile cloudchipr-setup-ws 2>/dev/null
+    --profile cloudchipr-setup-ws >/dev/null 2>&1 || true
 
   WS_TOKEN=$(databricks auth token --profile cloudchipr-setup-ws -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
 
@@ -168,11 +168,13 @@ if [ -n "$WAREHOUSE_ID" ]; then
         return
       fi
 
-      STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+      STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
       if [ "$STATE" != "SUCCEEDED" ]; then
         echo -e "${RED}  ✗ Failed: $1${RESET}"
-        echo -e "${RED}    $(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)${RESET}"
+        echo -e "${RED}    $(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4 || true)${RESET}"
         SQL_FAILED=1
+      else
+        echo -e "${GREEN}  ✓ $1${RESET}"
       fi
     }
 
