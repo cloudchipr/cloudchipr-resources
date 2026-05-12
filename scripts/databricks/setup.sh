@@ -42,6 +42,16 @@ echo ""
 read -r -p "  Workspace URL (e.g. https://dbc-xxxx.cloud.databricks.com): " WORKSPACE_HOST
 read -r -p "  Account ID (from accounts.cloud.databricks.com): " ACCOUNT_ID
 
+if [[ -z "$WORKSPACE_HOST" || -z "$ACCOUNT_ID" ]]; then
+  echo -e "${RED}  ✗ Workspace URL and Account ID are required.${RESET}"
+  exit 1
+fi
+
+if [[ ! "$WORKSPACE_HOST" =~ ^https:// ]]; then
+  echo -e "${RED}  ✗ Workspace URL must start with https://${RESET}"
+  exit 1
+fi
+
 echo ""
 
 # =============================================================================
