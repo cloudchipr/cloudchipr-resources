@@ -6,7 +6,8 @@
 # it the minimum permissions needed to scan your Databricks workspace.
 #
 # Requirements:
-#   - Databricks CLI v0.205+ installed (pip install databricks-cli)
+#   - Databricks CLI v0.205+ installed via official installer (Homebrew, curl, WinGet, or Chocolatey)
+#     The new standalone CLI executable is required for modern account/workspace commands used by this script.
 #   - Account admin access to accounts.cloud.databricks.com
 #
 # Usage:
@@ -60,7 +61,7 @@ for w in ws:
     if w.get('deployment_name') == '$DEPLOYMENT_NAME':
         print(w['workspace_id'])
         break
-")
+" || true)
 
 if [ -z "$WORKSPACE_ID" ]; then
   echo -e "${RED}  Could not auto-detect workspace ID. Please enter it manually.${RESET}"
@@ -140,34 +141,52 @@ if [ -n "$WAREHOUSE_ID" ]; then
 
   WS_TOKEN=$(databricks auth token --profile cloudchipr-setup-ws -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
 
-  # Grant SP permission to use the warehouse
-  databricks warehouses set-permissions "$WAREHOUSE_ID" \
-    --json "{\"access_control_list\": [{\"service_principal_name\": \"${APP_ID}\", \"permission_level\": \"CAN_USE\"}]}" \
-    --profile cloudchipr-setup-ws >/dev/null
+  # Validate token before proceeding
+  if [ -z "$WS_TOKEN" ]; then
+    echo -e "${RED}  ✗ Failed to obtain workspace token${RESET}"
+    SQL_FAILED=1
+  else
+    # Grant SP permission to use the warehouse
+    databricks warehouses set-permissions "$WAREHOUSE_ID" \
+      --json "{\"access_control_list\": [{\"service_principal_name\": \"${APP_ID}\", \"permission_level\": \"CAN_USE\"}]}" \
+      --profile cloudchipr-setup-ws >/dev/null
 
-  run_sql() {
-    RESPONSE=$(curl -sf -X POST "${WORKSPACE_HOST}/api/2.0/sql/statements" \
-      -H "Authorization: Bearer ${WS_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"$1\", \"wait_timeout\": \"10s\"}")
-    STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
-    if [ "$STATE" != "SUCCEEDED" ]; then
-      echo -e "${RED}  ✗ Failed: $1${RESET}"
-      echo -e "${RED}    $(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)${RESET}"
-      SQL_FAILED=1
-    fi
-  }
+    run_sql() {
+      # Disable errexit temporarily to capture curl failures
+      set +e
+      RESPONSE=$(curl -s -X POST "${WORKSPACE_HOST}/api/2.0/sql/statements" \
+        -H "Authorization: Bearer ${WS_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"$1\", \"wait_timeout\": \"10s\"}")
+      CURL_EXIT=$?
+      set -e
 
-  SQL_FAILED=0
+      if [ $CURL_EXIT -ne 0 ]; then
+        echo -e "${RED}  ✗ Failed: $1${RESET}"
+        echo -e "${RED}    curl error (exit code $CURL_EXIT)${RESET}"
+        SQL_FAILED=1
+        return
+      fi
 
-  run_sql "GRANT USE CATALOG ON CATALOG system TO \`${APP_ID}\`"
-  run_sql "GRANT USE SCHEMA ON SCHEMA system.billing TO \`${APP_ID}\`"
-  run_sql "GRANT USE SCHEMA ON SCHEMA system.compute TO \`${APP_ID}\`"
-  run_sql "GRANT USE SCHEMA ON SCHEMA system.query TO \`${APP_ID}\`"
-  run_sql "GRANT SELECT ON TABLE system.billing.usage TO \`${APP_ID}\`"
-  run_sql "GRANT SELECT ON TABLE system.billing.list_prices TO \`${APP_ID}\`"
-  run_sql "GRANT SELECT ON TABLE system.compute.node_timeline TO \`${APP_ID}\`"
-  run_sql "GRANT SELECT ON TABLE system.query.history TO \`${APP_ID}\`"
+      STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4)
+      if [ "$STATE" != "SUCCEEDED" ]; then
+        echo -e "${RED}  ✗ Failed: $1${RESET}"
+        echo -e "${RED}    $(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4)${RESET}"
+        SQL_FAILED=1
+      fi
+    }
+
+    SQL_FAILED=0
+
+    run_sql "GRANT USE CATALOG ON CATALOG system TO \`${APP_ID}\`"
+    run_sql "GRANT USE SCHEMA ON SCHEMA system.billing TO \`${APP_ID}\`"
+    run_sql "GRANT USE SCHEMA ON SCHEMA system.compute TO \`${APP_ID}\`"
+    run_sql "GRANT USE SCHEMA ON SCHEMA system.query TO \`${APP_ID}\`"
+    run_sql "GRANT SELECT ON TABLE system.billing.usage TO \`${APP_ID}\`"
+    run_sql "GRANT SELECT ON TABLE system.billing.list_prices TO \`${APP_ID}\`"
+    run_sql "GRANT SELECT ON TABLE system.compute.node_timeline TO \`${APP_ID}\`"
+    run_sql "GRANT SELECT ON TABLE system.query.history TO \`${APP_ID}\`"
+  fi
 
   if [ $SQL_FAILED -eq 0 ]; then
     echo -e "${GREEN}  ✓ System table access granted${RESET}"
