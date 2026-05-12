@@ -39,8 +39,8 @@ echo ""
 echo -e "${CYAN}Step 1 - Enter your Databricks details${RESET}"
 echo ""
 
-read -r -p "  Workspace URL (e.g. https://dbc-xxxx.cloud.databricks.com): " WORKSPACE_HOST
-read -r -p "  Account ID (from accounts.cloud.databricks.com): " ACCOUNT_ID
+read -r -p "  Workspace URL (e.g. https://dbc-xxxx.cloud.databricks.com): " WORKSPACE_HOST </dev/tty
+read -r -p "  Account ID (from accounts.cloud.databricks.com): " ACCOUNT_ID </dev/tty
 
 if [[ -z "$WORKSPACE_HOST" || -z "$ACCOUNT_ID" ]]; then
   echo -e "${RED}  ✗ Workspace URL and Account ID are required.${RESET}"
@@ -82,7 +82,7 @@ for w in ws:
 
 if [ -z "$WORKSPACE_ID" ]; then
   echo -e "${RED}  Could not auto-detect workspace ID. Please enter it manually.${RESET}"
-  read -r -p "  Workspace ID (numeric, from workspace URL ?o=XXXXXXX): " WORKSPACE_ID
+  read -r -p "  Workspace ID (numeric, from workspace URL ?o=XXXXXXX): " WORKSPACE_ID </dev/tty
 else
   echo -e "${GREEN}  ✓ Workspace ID detected: $WORKSPACE_ID${RESET}"
 fi
@@ -146,7 +146,7 @@ echo -e "${CYAN}Step 6 - Granting system table access${RESET}"
 echo "  (requires a running SQL warehouse - press Enter to skip if none available)"
 echo ""
 
-read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID
+read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID </dev/tty
 
 if [ -n "$WAREHOUSE_ID" ]; then
   # Authenticate at workspace level for SQL execution
