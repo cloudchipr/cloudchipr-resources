@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================================
 # Cloudchipr - Databricks Integration Setup
 # =============================================================================
@@ -13,7 +13,7 @@
 #   bash setup.sh
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
@@ -31,8 +31,8 @@ echo ""
 echo -e "${CYAN}Step 1 - Enter your Databricks details${RESET}"
 echo ""
 
-read -pr "  Workspace URL (e.g. https://dbc-xxxx.cloud.databricks.com): " WORKSPACE_HOST
-read -pr "  Account ID (from accounts.cloud.databricks.com): " ACCOUNT_ID
+read -r -p "  Workspace URL (e.g. https://dbc-xxxx.cloud.databricks.com): " WORKSPACE_HOST
+read -r -p "  Account ID (from accounts.cloud.databricks.com): " ACCOUNT_ID
 
 echo ""
 
@@ -64,7 +64,7 @@ for w in ws:
 
 if [ -z "$WORKSPACE_ID" ]; then
   echo -e "${RED}  Could not auto-detect workspace ID. Please enter it manually.${RESET}"
-  read -pr "  Workspace ID (numeric, from workspace URL ?o=XXXXXXX): " WORKSPACE_ID
+  read -r -p "  Workspace ID (numeric, from workspace URL ?o=XXXXXXX): " WORKSPACE_ID
 else
   echo -e "${GREEN}  ✓ Workspace ID detected: $WORKSPACE_ID${RESET}"
 fi
@@ -128,7 +128,7 @@ echo -e "${CYAN}Step 6 - Granting system table access${RESET}"
 echo "  (requires a running SQL warehouse - skip with Ctrl+C if none available)"
 echo ""
 
-read -pr "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID
+read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID
 
 if [ -n "$WAREHOUSE_ID" ]; then
   # Authenticate at workspace level for SQL execution
