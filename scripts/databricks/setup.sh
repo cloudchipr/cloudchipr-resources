@@ -22,6 +22,13 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 RESET='\033[0m'
 
+for cmd in databricks python3; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Missing required dependency: $cmd" >&2
+    exit 1
+  fi
+done
+
 echo ""
 echo -e "${CYAN}=== Cloudchipr Databricks Integration Setup ===${RESET}"
 echo ""
@@ -126,7 +133,7 @@ echo ""
 # Step 6 - Grant system table access (for precise dollar savings)
 # =============================================================================
 echo -e "${CYAN}Step 6 - Granting system table access${RESET}"
-echo "  (requires a running SQL warehouse - skip with Ctrl+C if none available)"
+echo "  (requires a running SQL warehouse - press Enter to skip if none available)"
 echo ""
 
 read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID
