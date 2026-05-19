@@ -1,0 +1,24 @@
+# image:
+#   tag: main
+#   pullPolicy: Always
+config:
+  c8r_cluster_id: "793460b7-76e0-4685-9ca2-acae9341a5dc"
+  c8r_cluster_name: "cloudchipr-dev"
+  c8r_cloud_account: "c95efe27-8def-4b75-9652-f1b92f5de624"
+  c8r_api_key: cKz7f9JMyDiCYS4cg4fSclmSBUoZ3008Lb1
+networkCollection:
+  enabled: true
+addEnv:
+  - name: C8R_URL
+    value: https://api-staging.cloudchipr.io
+  - name: C8R_DISABLE_EXTERNAL_DNS
+    value: "true"
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 100
+  targetMemoryUtilizationPercentage: 100
+  behavior: {}
+  annotations: {}
+  labels: {}
