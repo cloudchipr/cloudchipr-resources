@@ -60,13 +60,26 @@ echo ""
 echo -e "${CYAN}Step 2 - Authenticating with Databricks account (browser will open)${RESET}"
 echo ""
 
+# Remove stale profiles if they exist
+python3 -c "
+import configparser, os
+path = os.path.expanduser('~/.databrickscfg')
+cfg = configparser.ConfigParser()
+cfg.read(path)
+for section in ['cloudchipr-setup', 'cloudchipr-setup-ws']:
+    if section in cfg:
+        cfg.remove_section(section)
+with open(path, 'w') as f:
+    cfg.write(f)
+" 2>/dev/null || true
+
 databricks auth login \
   --host https://accounts.cloud.databricks.com \
   --account-id "$ACCOUNT_ID" \
-  --profile cloudchipr-setup
+  --profile cloudchipr-setup \
+  --skip-workspace
 
 echo -e "${GREEN}  ✓ Authenticated${RESET}"
-echo ""
 
 # Auto-detect workspace ID from the account
 DEPLOYMENT_NAME=$(echo "$WORKSPACE_HOST" | sed 's|https://||' | cut -d'.' -f1)
@@ -140,7 +153,7 @@ echo -e "${GREEN}  ✓ Secret generated (expires: $EXPIRE_TIME)${RESET}"
 echo ""
 
 # =============================================================================
-# Step 6 - Grant system table access (for precise dollar savings)
+# Step 6 - Grant system table access
 # =============================================================================
 echo -e "${CYAN}Step 6 - Granting system table access${RESET}"
 echo "  (requires a running SQL warehouse - press Enter to skip if none available)"
@@ -149,16 +162,27 @@ echo ""
 read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID </dev/tty
 
 if [ -n "$WAREHOUSE_ID" ]; then
-  # Authenticate at workspace level for SQL execution
   echo ""
   echo "  Step 6 requires workspace-level authentication (browser will open again)."
+
+  # Remove stale workspace profile
+  python3 -c "
+import configparser, os
+path = os.path.expanduser('~/.databrickscfg')
+cfg = configparser.ConfigParser()
+cfg.read(path)
+if 'cloudchipr-setup-ws' in cfg:
+    cfg.remove_section('cloudchipr-setup-ws')
+    with open(path, 'w') as f:
+        cfg.write(f)
+" 2>/dev/null || true
+
   databricks auth login \
     --host "$WORKSPACE_HOST" \
-    --profile cloudchipr-setup-ws >/dev/null 2>&1 || true
+    --profile cloudchipr-setup-ws
 
   WS_TOKEN=$(databricks auth token --profile cloudchipr-setup-ws -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
 
-  # Validate token before proceeding
   if [ -z "$WS_TOKEN" ]; then
     echo -e "${RED}  ✗ Failed to obtain workspace token${RESET}"
     SQL_FAILED=1
@@ -169,7 +193,6 @@ if [ -n "$WAREHOUSE_ID" ]; then
       --profile cloudchipr-setup-ws >/dev/null
 
     run_sql() {
-      # Disable errexit temporarily to capture curl failures
       set +e
       RESPONSE=$(curl -s -X POST "${WORKSPACE_HOST}/api/2.0/sql/statements" \
         -H "Authorization: Bearer ${WS_TOKEN}" \
