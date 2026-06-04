@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Cloudchipr - Databricks Integration Setup
+# Cloudchipr — Databricks Integration Setup
 # =============================================================================
 # This script creates a read-only service principal for Cloudchipr and grants
 # it the minimum permissions needed to scan your Databricks workspace.
 #
 # Requirements:
 #   - Databricks CLI v0.205+ installed via official installer (Homebrew, curl, WinGet, or Chocolatey)
-#     The new standalone CLI executable is required for modern account/workspace commands used by this script.
 #   - Account admin access to accounts.cloud.databricks.com
 #
 # Usage:
@@ -22,7 +21,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 RESET='\033[0m'
 
-for cmd in databricks python3; do
+for cmd in databricks python3 curl; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Missing required dependency: $cmd" >&2
     exit 1
@@ -34,9 +33,9 @@ echo -e "${CYAN}=== Cloudchipr Databricks Integration Setup ===${RESET}"
 echo ""
 
 # =============================================================================
-# Step 1 - Collect inputs
+# Step 1 — Collect inputs
 # =============================================================================
-echo -e "${CYAN}Step 1 - Enter your Databricks details${RESET}"
+echo -e "${CYAN}Step 1 — Enter your Databricks details${RESET}"
 echo ""
 
 read -r -p "  Workspace URL (e.g. https://dbc-xxxx.cloud.databricks.com): " WORKSPACE_HOST </dev/tty
@@ -52,12 +51,15 @@ if [[ ! "$WORKSPACE_HOST" =~ ^https:// ]]; then
   exit 1
 fi
 
+# Strip query string, fragment, and trailing slash (handles browser copy-paste URLs)
+WORKSPACE_HOST=$(echo "$WORKSPACE_HOST" | sed 's/[?#].*//' | sed 's|/$||')
+
 echo ""
 
 # =============================================================================
-# Step 2 - Authenticate CLI at account level
+# Step 2 — Authenticate CLI at account level
 # =============================================================================
-echo -e "${CYAN}Step 2 - Authenticating with Databricks account (browser will open)${RESET}"
+echo -e "${CYAN}Step 2 — Authenticating with Databricks account (browser will open)${RESET}"
 echo ""
 
 # Remove stale profiles if they exist
@@ -102,9 +104,9 @@ fi
 echo ""
 
 # =============================================================================
-# Step 3 - Create service principal
+# Step 3 — Create service principal
 # =============================================================================
-echo -e "${CYAN}Step 3 - Creating service principal 'cloudchipr'${RESET}"
+echo -e "${CYAN}Step 3 — Creating service principal 'cloudchipr'${RESET}"
 echo ""
 
 SP_JSON=$(databricks account service-principals create \
@@ -121,9 +123,9 @@ echo "    Application ID: $APP_ID"
 echo ""
 
 # =============================================================================
-# Step 4 - Assign to workspace
+# Step 4 — Assign to workspace
 # =============================================================================
-echo -e "${CYAN}Step 4 - Assigning service principal to workspace${RESET}"
+echo -e "${CYAN}Step 4 — Assigning service principal to workspace${RESET}"
 echo ""
 
 databricks account workspace-assignment update \
@@ -136,9 +138,9 @@ echo -e "${GREEN}  ✓ Assigned to workspace as USER${RESET}"
 echo ""
 
 # =============================================================================
-# Step 5 - Generate OAuth secret
+# Step 5 — Generate OAuth secret
 # =============================================================================
-echo -e "${CYAN}Step 5 - Generating OAuth secret${RESET}"
+echo -e "${CYAN}Step 5 — Generating OAuth secret${RESET}"
 echo ""
 
 SECRET_JSON=$(databricks account service-principal-secrets create \
@@ -153,10 +155,10 @@ echo -e "${GREEN}  ✓ Secret generated (expires: $EXPIRE_TIME)${RESET}"
 echo ""
 
 # =============================================================================
-# Step 6 - Grant system table access
+# Step 6 — Grant system table access
 # =============================================================================
-echo -e "${CYAN}Step 6 - Granting system table access${RESET}"
-echo "  (requires a running SQL warehouse - press Enter to skip if none available)"
+echo -e "${CYAN}Step 6 — Granting system table access${RESET}"
+echo "  (requires a running SQL warehouse — press Enter to skip if none available)"
 echo ""
 
 read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID </dev/tty
@@ -165,56 +167,90 @@ if [ -n "$WAREHOUSE_ID" ]; then
   echo ""
   echo "  Step 6 requires workspace-level authentication (browser will open again)."
 
-  # Remove stale workspace profile
-  python3 -c "
-import configparser, os
-path = os.path.expanduser('~/.databrickscfg')
-cfg = configparser.ConfigParser()
-cfg.read(path)
-if 'cloudchipr-setup-ws' in cfg:
-    cfg.remove_section('cloudchipr-setup-ws')
-    with open(path, 'w') as f:
-        cfg.write(f)
-" 2>/dev/null || true
-
   databricks auth login \
     --host "$WORKSPACE_HOST" \
     --profile cloudchipr-setup-ws
 
-  WS_TOKEN=$(databricks auth token --profile cloudchipr-setup-ws -o json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
+  WS_TOKEN=$(databricks auth token --profile cloudchipr-setup-ws -o json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)
 
   if [ -z "$WS_TOKEN" ]; then
     echo -e "${RED}  ✗ Failed to obtain workspace token${RESET}"
     SQL_FAILED=1
   else
-    # Grant SP permission to use the warehouse
-    databricks warehouses set-permissions "$WAREHOUSE_ID" \
+    # Grant SP CAN_USE on the warehouse via PATCH (non-fatal: won't wipe existing ACL)
+    set +e
+    databricks warehouses update-permissions "$WAREHOUSE_ID" \
       --json "{\"access_control_list\": [{\"service_principal_name\": \"${APP_ID}\", \"permission_level\": \"CAN_USE\"}]}" \
-      --profile cloudchipr-setup-ws >/dev/null
+      --profile cloudchipr-setup-ws >/dev/null 2>&1
+    WH_RC=$?
+    set -e
+
+    if [ $WH_RC -eq 0 ]; then
+      echo -e "${GREEN}  ✓ Warehouse CAN_USE granted to service principal${RESET}"
+    else
+      echo -e "${YELLOW}  ⚠ Could not grant warehouse CAN_USE (non-fatal — continuing with GRANT statements)${RESET}"
+    fi
+
+    _sql_state() { echo "$1" | python3 -c \
+      "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state',''))" 2>/dev/null || echo ""; }
+
+    _sql_errmsg() {
+      echo "$1" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+# Statement API error
+if d.get('status', {}).get('error', {}).get('message'):
+    print(d['status']['error']['message'])
+# General Databricks API error (e.g. 401/403 responses)
+elif d.get('message'):
+    print(d['message'])
+else:
+    import json as j; print(j.dumps(d)[:400])
+" 2>/dev/null || echo "${1:0:400}"
+    }
 
     run_sql() {
+      local stmt="$1"
+      local response state stmt_id attempts
       set +e
-      RESPONSE=$(curl -s -X POST "${WORKSPACE_HOST}/api/2.0/sql/statements" \
+      response=$(curl -s -X POST "${WORKSPACE_HOST}/api/2.0/sql/statements" \
         -H "Authorization: Bearer ${WS_TOKEN}" \
         -H "Content-Type: application/json" \
-        -d "{\"warehouse_id\": \"${WAREHOUSE_ID}\", \"statement\": \"$1\", \"wait_timeout\": \"10s\"}")
-      CURL_EXIT=$?
+        -d "{\"warehouse_id\":\"${WAREHOUSE_ID}\",\"statement\":\"${stmt}\",\"wait_timeout\":\"50s\"}")
+      local rc=$?
       set -e
 
-      if [ $CURL_EXIT -ne 0 ]; then
-        echo -e "${RED}  ✗ Failed: $1${RESET}"
-        echo -e "${RED}    curl error (exit code $CURL_EXIT)${RESET}"
+      if [ $rc -ne 0 ]; then
+        echo -e "${RED}  ✗ curl error — ${stmt}${RESET}"
         SQL_FAILED=1
         return
       fi
 
-      STATE=$(echo "$RESPONSE" | grep -o '"state":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-      if [ "$STATE" != "SUCCEEDED" ]; then
-        echo -e "${RED}  ✗ Failed: $1${RESET}"
-        echo -e "${RED}    $(echo "$RESPONSE" | grep -o '"message":"[^"]*"' | cut -d'"' -f4 || true)${RESET}"
-        SQL_FAILED=1
+      state=$(_sql_state "$response")
+
+      # Poll if the warehouse is still starting (PENDING / RUNNING beyond the 50s wait)
+      if [ "$state" = "PENDING" ] || [ "$state" = "RUNNING" ]; then
+        stmt_id=$(echo "$response" | python3 -c \
+          "import sys,json; print(json.load(sys.stdin).get('statement_id',''))" 2>/dev/null || echo "")
+        attempts=0
+        while { [ "$state" = "PENDING" ] || [ "$state" = "RUNNING" ]; } && [ $attempts -lt 12 ]; do
+          sleep 10
+          set +e
+          response=$(curl -s "${WORKSPACE_HOST}/api/2.0/sql/statements/${stmt_id}" \
+            -H "Authorization: Bearer ${WS_TOKEN}")
+          set -e
+          state=$(_sql_state "$response")
+          attempts=$((attempts + 1))
+        done
+      fi
+
+      if [ "$state" = "SUCCEEDED" ]; then
+        echo -e "${GREEN}  ✓ ${stmt}${RESET}"
       else
-        echo -e "${GREEN}  ✓ $1${RESET}"
+        echo -e "${RED}  ✗ ${stmt}${RESET}"
+        echo -e "${RED}    $(_sql_errmsg "$response")${RESET}"
+        SQL_FAILED=1
       fi
     }
 
@@ -244,24 +280,26 @@ if 'cloudchipr-setup-ws' in cfg:
     run_sql "GRANT SELECT ON TABLE system.access.workspaces_latest TO \`${APP_ID}\`"
   fi
 
-  if [ $SQL_FAILED -eq 0 ]; then
+  if [ "${SQL_FAILED:-0}" -eq 0 ]; then
     echo -e "${GREEN}  ✓ System table access granted${RESET}"
   else
-    echo -e "${YELLOW}  ⚠ Some grants failed - dollar savings estimates will use list prices as fallback${RESET}"
-    echo -e "${YELLOW}    Ensure the user running this script has Metastore Admin privileges${RESET}"
+    echo -e "${YELLOW}  ⚠ Some grants failed — ensure the authenticated user has Metastore Admin privileges${RESET}"
+    echo -e "${YELLOW}    Dollar savings estimates will use list prices as fallback${RESET}"
   fi
+else
+  echo -e "${YELLOW}  ⚠ Skipped — dollar savings estimates will use list prices as fallback${RESET}"
 fi
 
 echo ""
 
 # =============================================================================
-# Done - print credentials to use in Cloudchipr
+# Done — print credentials to share with Cloudchipr
 # =============================================================================
-echo -e "${GREEN}=== Setup complete! Use these credentials in Cloudchipr ===${RESET}"
+echo -e "${GREEN}=== Setup complete! Share these credentials with Cloudchipr ===${RESET}"
 echo ""
 echo "  Workspace URL:  $WORKSPACE_HOST"
 echo "  Client ID:      $APP_ID"
 echo "  Client Secret:  $CLIENT_SECRET"
 echo ""
-echo -e "${YELLOW}  Keep the client secret safe - it cannot be retrieved again.${RESET}"
+echo -e "${YELLOW}  Keep the client secret safe — it cannot be retrieved again.${RESET}"
 echo ""
