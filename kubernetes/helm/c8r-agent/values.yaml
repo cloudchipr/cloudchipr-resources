@@ -47,11 +47,11 @@ annotations: {}
 podLabels: {}
 ## @param podAnnotations Annotations for the pod.
 podAnnotations: {}
-## @param nodeSelector Node Selector labels for pod assignment.
+## @param nodeSelector Node Selector labels for pod assignment. Applies only to agent, not collector DaemonSet.
 nodeSelector: {}
-## @param affinity Affinity settings for pod assignment.
+## @param affinity Affinity settings for pod assignment. Applies only to agent, not collector DaemonSet.
 affinity: {}
-## @param tolerations Tolerations for pod assignment (Optional).
+## @param tolerations Tolerations for pod assignment. Applies only to agent, not collector DaemonSet.
 tolerations: []
 ## @param resources.requests.cpu CPU request for the container.
 ## @param resources.requests.memory Memory request for the container.
