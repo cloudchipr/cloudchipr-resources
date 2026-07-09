@@ -2,8 +2,25 @@ apiVersion: v1
 entries:
   c8r-agent:
   - apiVersion: v2
+    appVersion: v4.1.0
+    created: "2026-07-09T17:37:07.159654067Z"
+    description: Cloudchipr SaaS Platform Kubernetes Agent
+    digest: b9e366cef977a569d18472c25683a8a3b43eacaa388256ac64db71b98b74d299
+    home: https://github.com/cloudchipr/cloudchipr-resources
+    icon: https://static.cloudchipr.io/logos/PNG/cloudchipr%20favicon%404x.png
+    keywords:
+    - Cloudchipr
+    - Kubernetes
+    - Metrics
+    kubeVersion: '>= 1.19.0-0'
+    name: c8r-agent
+    type: application
+    urls:
+    - c8r-agent-4.1.0.tgz
+    version: 4.1.0
+  - apiVersion: v2
     appVersion: v4.0.0
-    created: "2026-06-22T16:12:08.098351722Z"
+    created: "2026-07-09T17:37:07.158455871Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 288c91dd5f76c4f1f9cb0304566805345d4fcc9e6a3058a0b3e79983bf7d93c9
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -20,7 +37,7 @@ entries:
     version: 4.0.0
   - apiVersion: v2
     appVersion: v3.9.0
-    created: "2026-06-22T16:12:08.084747211Z"
+    created: "2026-07-09T17:37:07.151618971Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 569c5d8220b43d7ff3d9dca3cfe704e021cfe12f760a2851eb53960247f2f1a9
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -37,7 +54,7 @@ entries:
     version: 3.11.0
   - apiVersion: v2
     appVersion: v3.8.0
-    created: "2026-06-22T16:12:08.084061453Z"
+    created: "2026-07-09T17:37:07.149980924Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 62cfdbcee8db9990389fa27940beadac257cb0e9dcd2bc2386a74dc82e09ef28
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -54,7 +71,7 @@ entries:
     version: 3.10.0
   - apiVersion: v2
     appVersion: v3.7.0
-    created: "2026-06-22T16:12:08.096742029Z"
+    created: "2026-07-09T17:37:07.156977094Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 8a9170907d9009e6a8bd5a7696e8fa2c7c72237004da08a6f26dca05853b916f
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -71,7 +88,7 @@ entries:
     version: 3.9.0
   - apiVersion: v2
     appVersion: v3.6.0
-    created: "2026-06-22T16:12:08.096094359Z"
+    created: "2026-07-09T17:37:07.155917043Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: e8ab4ab7c8f14a2b36ea2b5aa031c3ea033723a9cfc249b872434e9e0c92891c
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -88,7 +105,7 @@ entries:
     version: 3.8.0
   - apiVersion: v2
     appVersion: v3.5.0
-    created: "2026-06-22T16:12:08.095455721Z"
+    created: "2026-07-09T17:37:07.15528869Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 40a07daf5411e493e7d1c58353cc56d0c99843c5f5bfd3d27c9fdacddd3c522b
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -105,7 +122,7 @@ entries:
     version: 3.7.1
   - apiVersion: v2
     appVersion: v3.5.0
-    created: "2026-06-22T16:12:08.094753462Z"
+    created: "2026-07-09T17:37:07.154693008Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 9895f861626ed49814f85dec0cb7f6f9645edb1a3dea540fac88e3979849674b
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -122,7 +139,7 @@ entries:
     version: 3.7.0
   - apiVersion: v2
     appVersion: v3.4.0
-    created: "2026-06-22T16:12:08.094153118Z"
+    created: "2026-07-09T17:37:07.154079373Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: c5a5fe47583ecc87c45f017904825ea2b4b83a9590788121d4419c3c5d766abf
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -139,7 +156,7 @@ entries:
     version: 3.6.0
   - apiVersion: v2
     appVersion: v3.4.0
-    created: "2026-06-22T16:12:08.093470087Z"
+    created: "2026-07-09T17:37:07.153459847Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 089eb0812a9599d735fd49ce9e48374edd43ee622d17444f1bba3c8977e00de8
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -156,7 +173,7 @@ entries:
     version: 3.5.0
   - apiVersion: v2
     appVersion: v3.3.0
-    created: "2026-06-22T16:12:08.092777121Z"
+    created: "2026-07-09T17:37:07.152822748Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 200cf37f7207d507267af10165312abf9e9dff3fcf0cc7c1ee1e7015ce2bff96
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -173,7 +190,7 @@ entries:
     version: 3.4.0
   - apiVersion: v2
     appVersion: v3.2.0
-    created: "2026-06-22T16:12:08.08548221Z"
+    created: "2026-07-09T17:37:07.152172294Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: d5e7c27163a734238c103344dd9cd5d0270b68daba448b4e1269d48b53af512b
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -190,7 +207,7 @@ entries:
     version: 3.2.0
   - apiVersion: v2
     appVersion: v3.1.0
-    created: "2026-06-22T16:12:08.083412893Z"
+    created: "2026-07-09T17:37:07.148661511Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 3198ba49afe72f42c7d6e4ffaab7d8c9e04e29f10fb82ae92de422872c820f72
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -207,7 +224,7 @@ entries:
     version: 3.1.0
   - apiVersion: v2
     appVersion: v3.0.0
-    created: "2026-06-22T16:12:08.082871058Z"
+    created: "2026-07-09T17:37:07.148113919Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 3209542e5d485385821ca80e578b5d9c727f437e2a903c6ebaadd491a5acd0bf
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -224,7 +241,7 @@ entries:
     version: 3.0.0
   - apiVersion: v2
     appVersion: v2.19.0
-    created: "2026-06-22T16:12:08.077387564Z"
+    created: "2026-07-09T17:37:07.144239148Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: a7657b8dff613ab42441f590f3a24bc2670ed1ee46ecd4516ddffda969841c35
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -241,7 +258,7 @@ entries:
     version: 2.22.0
   - apiVersion: v2
     appVersion: v2.18.0
-    created: "2026-06-22T16:12:08.077018809Z"
+    created: "2026-07-09T17:37:07.143004526Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 01c7c5772de59cfc687cc9d69838af9a6a69e49011f71409cf8efe6ab0a2968d
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -258,7 +275,7 @@ entries:
     version: 2.21.0
   - apiVersion: v2
     appVersion: v2.18.0
-    created: "2026-06-22T16:12:08.076625852Z"
+    created: "2026-07-09T17:37:07.142048422Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 54e87660d782e505cfcc1ccc080e628460b22781b72073992249f2d97c59e1c8
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -275,7 +292,7 @@ entries:
     version: 2.20.0
   - apiVersion: v2
     appVersion: v2.17.1
-    created: "2026-06-22T16:12:08.07627027Z"
+    created: "2026-07-09T17:37:07.141144896Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: ec9e2d12a7fbeb122a4d0302896d5cc19784daf626d81a2abc713856e0faa165
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -292,7 +309,7 @@ entries:
     version: 2.19.2
   - apiVersion: v2
     appVersion: v2.17.0
-    created: "2026-06-22T16:12:08.075898536Z"
+    created: "2026-07-09T17:37:07.14073476Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: fff0aaaf35120acc063809e7917212dcb14278673c76ba14fa66c84c8dbca0f5
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -309,7 +326,7 @@ entries:
     version: 2.19.0
   - apiVersion: v2
     appVersion: v2.15.0
-    created: "2026-06-22T16:12:08.075528859Z"
+    created: "2026-07-09T17:37:07.140305128Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 9e41e75740dcdb109d3598d2177bf38cfa15ff940ee8f43591666be443a838f5
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -326,7 +343,7 @@ entries:
     version: 2.18.0
   - apiVersion: v2
     appVersion: v2.15.0
-    created: "2026-06-22T16:12:08.075139537Z"
+    created: "2026-07-09T17:37:07.139935538Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 554769e284dd918ff8fe44e1ec5cbeb20110168fc7323187064f659ff7c14fdb
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -343,7 +360,7 @@ entries:
     version: 2.17.0
   - apiVersion: v2
     appVersion: v2.14.0
-    created: "2026-06-22T16:12:08.074735092Z"
+    created: "2026-07-09T17:37:07.139574915Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: aaf827b67f6266c0a1fee5893c001389f1fb70ae8414efe55aae33ae4de3c25c
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -360,7 +377,7 @@ entries:
     version: 2.16.0
   - apiVersion: v2
     appVersion: v2.13.0
-    created: "2026-06-22T16:12:08.074394404Z"
+    created: "2026-07-09T17:37:07.139177684Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 7e1309b2a34e5e54c9457d4bcfc84e18798749cc1351f87fc079a07b1eb97a6f
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -377,7 +394,7 @@ entries:
     version: 2.15.0
   - apiVersion: v2
     appVersion: v2.12.0
-    created: "2026-06-22T16:12:08.073986584Z"
+    created: "2026-07-09T17:37:07.138771245Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 6f10386cd87f413ea98eec2e09b05b006978b85cfed736fae99f5f4634f2d222
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -394,7 +411,7 @@ entries:
     version: 2.14.1
   - apiVersion: v2
     appVersion: v2.12.0
-    created: "2026-06-22T16:12:08.073620831Z"
+    created: "2026-07-09T17:37:07.138405773Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 9d184fd4fed21ea0915850eb73e799924dda69618d324a850086cad7b7d53da3
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -411,7 +428,7 @@ entries:
     version: 2.14.0
   - apiVersion: v2
     appVersion: v2.11.0
-    created: "2026-06-22T16:12:08.07322764Z"
+    created: "2026-07-09T17:37:07.138004114Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 7ceb1ace446952c201e7e8d9329355e39b35a45e5fce08f7c7a4924598a3b19c
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -428,7 +445,7 @@ entries:
     version: 2.13.0
   - apiVersion: v2
     appVersion: v2.10.0
-    created: "2026-06-22T16:12:08.072808606Z"
+    created: "2026-07-09T17:37:07.137639904Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 131187aaf2411226b9d5f36b47448cfb87418760e2b3f1b3a79694746672f54a
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -445,7 +462,7 @@ entries:
     version: 2.12.0
   - apiVersion: v2
     appVersion: v2.9.0
-    created: "2026-06-22T16:12:08.071804816Z"
+    created: "2026-07-09T17:37:07.13724115Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 33e9ff3ba7b8a5421a8c7b1b2bad951c1bc5376d51c76b58a00437534c700fba
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -462,7 +479,7 @@ entries:
     version: 2.11.1
   - apiVersion: v2
     appVersion: v2.9.0
-    created: "2026-06-22T16:12:08.070950194Z"
+    created: "2026-07-09T17:37:07.136876489Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 6cadb6f05d249f5d5a45848fad820738fe966466fe0e13ef7dda8417fae6ebfd
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -479,7 +496,7 @@ entries:
     version: 2.11.0
   - apiVersion: v2
     appVersion: v2.8.0
-    created: "2026-06-22T16:12:08.061879413Z"
+    created: "2026-07-09T17:37:07.136477735Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: ce9ae0facc85db5e779c4355d2c2da68e2a410790bef7c0d0e78d7e5dd5747b3
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -496,7 +513,7 @@ entries:
     version: 2.10.0
   - apiVersion: v2
     appVersion: v2.7.0
-    created: "2026-06-22T16:12:08.082222034Z"
+    created: "2026-07-09T17:37:07.147590282Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: fd1440cd0ad28b625b6d90f0e4fc9a5f30e5c456bffbfc919e032790e0f76460
     home: https://github.com/cloudchipr/cloudchipr-resources
@@ -513,7 +530,7 @@ entries:
     version: 2.9.1
   - apiVersion: v2
     appVersion: v2.7.0
-    created: "2026-06-22T16:12:08.081868607Z"
+    created: "2026-07-09T17:37:07.147206676Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 9e6a55abe1133e54ed64b797533c03536f8ac07845de778cd2cf84efc3341f9f
     home: https://cloudchipr.com
@@ -530,7 +547,7 @@ entries:
     version: 2.9.0
   - apiVersion: v2
     appVersion: v2.6.0
-    created: "2026-06-22T16:12:08.081523217Z"
+    created: "2026-07-09T17:37:07.146833119Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 257e00a05df731a473fc09f53c9ab09b06489869f45796619ec87038cce009c5
     home: https://cloudchipr.com
@@ -547,7 +564,7 @@ entries:
     version: 2.8.1
   - apiVersion: v2
     appVersion: v2.6.0
-    created: "2026-06-22T16:12:08.081165652Z"
+    created: "2026-07-09T17:37:07.146461385Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: b6081f69a9bc712f8a339f1162ff236acc6ec7626660a2e455848948999a1712
     home: https://cloudchipr.com
@@ -564,7 +581,7 @@ entries:
     version: 2.8.0
   - apiVersion: v2
     appVersion: v2.5.0
-    created: "2026-06-22T16:12:08.080791207Z"
+    created: "2026-07-09T17:37:07.146090112Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 0568a5991be4363bf2a13ad4ef152bd38e33b709b4160d30ef3a9e06b6fbaf28
     home: https://cloudchipr.com
@@ -581,7 +598,7 @@ entries:
     version: 2.7.0
   - apiVersion: v2
     appVersion: v2.4.0
-    created: "2026-06-22T16:12:08.080405946Z"
+    created: "2026-07-09T17:37:07.145737264Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 147658abb43b6aeb4da2117687d18756c682f52d166199cecc26a5c5336e1ae3
     home: https://cloudchipr.com
@@ -598,7 +615,7 @@ entries:
     version: 2.6.0
   - apiVersion: v2
     appVersion: v2.3.0
-    created: "2026-06-22T16:12:08.079509894Z"
+    created: "2026-07-09T17:37:07.145387942Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: f44647804eb086740be5ee220729deea3a88966cc1da1a39f94eda72856645b8
     home: https://cloudchipr.com
@@ -615,7 +632,7 @@ entries:
     version: 2.5.0
   - apiVersion: v2
     appVersion: v2.2.0
-    created: "2026-06-22T16:12:08.078687609Z"
+    created: "2026-07-09T17:37:07.1450122Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: 9b02b4530a098990e579a9299579fc9ed6aca5b56d99214640d7e0ddca5f236f
     home: https://cloudchipr.com
@@ -632,7 +649,7 @@ entries:
     version: 2.4.0
   - apiVersion: v2
     appVersion: v2.1.0
-    created: "2026-06-22T16:12:08.077736646Z"
+    created: "2026-07-09T17:37:07.144649864Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: dda6f0b8cbe7676f18bd8f8c2502a16183b05a806dc5659ba358fc326463a48a
     home: https://cloudchipr.com
@@ -649,7 +666,7 @@ entries:
     version: 2.3.0
   - apiVersion: v2
     appVersion: 2.0.0
-    created: "2026-06-22T16:12:08.061492307Z"
+    created: "2026-07-09T17:37:07.136017476Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: b7eef219a9dd49ab6c2b0c2f027b3a75a98e1bff183f2115a7afadc9f1eb47d4
     home: https://cloudchipr.com
@@ -666,7 +683,7 @@ entries:
     version: 2.0.0
   - apiVersion: v2
     appVersion: 0.2.0
-    created: "2026-06-22T16:12:08.060826562Z"
+    created: "2026-07-09T17:37:07.135610897Z"
     description: Cloudchipr SaaS Platform Kubernetes Agent
     digest: b5dbe683854ca54c9f6f3864299832044bdac6a5fc8baaa1e0c376a31f6696c1
     home: https://cloudchipr.com
@@ -681,4 +698,4 @@ entries:
     urls:
     - c8r-agent-0.2.0.tgz
     version: 0.2.0
-generated: "2026-06-22T16:12:08.059620083Z"
+generated: "2026-07-09T17:37:07.134831683Z"
