@@ -276,10 +276,11 @@ else:
     echo -e "${GREEN}  ✓ System table access granted${RESET}"
   else
     echo -e "${YELLOW}  ⚠ Some grants failed — ensure the authenticated user has Metastore Admin privileges${RESET}"
-    echo -e "${YELLOW}    Dollar savings estimates will use list prices as fallback${RESET}"
+    echo -e "${YELLOW}    Cost collection requires all grants above to succeed.${RESET}"
   fi
 else
-  echo -e "${YELLOW}  ⚠ Skipped — dollar savings estimates will use list prices as fallback${RESET}"
+  echo -e "${YELLOW}  ⚠ Skipped — system table grants not applied.${RESET}"
+  echo -e "${YELLOW}    Cost collection will not work until these grants are run.${RESET}"
 fi
 
 echo ""
