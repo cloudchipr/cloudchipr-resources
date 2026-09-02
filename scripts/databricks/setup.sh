@@ -292,6 +292,8 @@ echo -e "${GREEN}=== Setup complete! Share these credentials with Cloudchipr ===
 echo ""
 echo "  Workspace URL:  $WORKSPACE_HOST"
 echo "  Client ID:      $APP_ID"
+[ -n "${WAREHOUSE_ID:-}" ] && echo "  Warehouse ID:   $WAREHOUSE_ID"
+
 echo "  Client Secret:  $CLIENT_SECRET"
 echo ""
 echo -e "${YELLOW}  Keep the client secret safe — it cannot be retrieved again.${RESET}"
