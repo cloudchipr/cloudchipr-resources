@@ -3,11 +3,12 @@
 # Cloudchipr — Databricks Integration Setup
 # =============================================================================
 # This script creates a read-only service principal for Cloudchipr and grants
-# it the minimum permissions needed to scan your Databricks workspace.
+# it the minimum permissions needed to collect cost and usage data.
 #
 # Requirements:
 #   - Databricks CLI v0.205+ installed via official installer (Homebrew, curl, WinGet, or Chocolatey)
 #   - Account admin access to accounts.cloud.databricks.com
+#   - Metastore admin (for the system table grants in Step 6)
 #
 # Usage:
 #   bash setup.sh
@@ -155,13 +156,13 @@ echo -e "${GREEN}  ✓ Secret generated (expires: $EXPIRE_TIME)${RESET}"
 echo ""
 
 # =============================================================================
-# Step 6 — Grant system table access
+# Step 6 — Grant warehouse access and system table access
 # =============================================================================
-echo -e "${CYAN}Step 6 — Granting system table access${RESET}"
-echo "  (requires a running SQL warehouse — press Enter to skip if none available)"
+echo -e "${CYAN}Step 6 — Granting warehouse and system table access${RESET}"
+echo "  A SQL warehouse is required. It will be started automatically if stopped."
 echo ""
 
-read -r -p "  SQL Warehouse ID (leave empty to skip): " WAREHOUSE_ID </dev/tty
+read -r -p "  SQL Warehouse ID: " WAREHOUSE_ID </dev/tty
 
 if [ -n "$WAREHOUSE_ID" ]; then
   echo ""
@@ -178,18 +179,23 @@ if [ -n "$WAREHOUSE_ID" ]; then
     echo -e "${RED}  ✗ Failed to obtain workspace token${RESET}"
     SQL_FAILED=1
   else
-    # Grant SP CAN_USE on the warehouse via PATCH (non-fatal: won't wipe existing ACL)
+    SQL_FAILED=0
+
+    # Grant SP CAN_USE on the warehouse via PATCH (won't wipe existing ACL).
+    # Required: the integration executes its query on this warehouse.
     set +e
-    databricks warehouses update-permissions "$WAREHOUSE_ID" \
+    WH_OUT=$(databricks warehouses update-permissions "$WAREHOUSE_ID" \
       --json "{\"access_control_list\": [{\"service_principal_name\": \"${APP_ID}\", \"permission_level\": \"CAN_USE\"}]}" \
-      --profile cloudchipr-setup-ws >/dev/null 2>&1
+      --profile cloudchipr-setup-ws 2>&1)
     WH_RC=$?
     set -e
 
     if [ $WH_RC -eq 0 ]; then
       echo -e "${GREEN}  ✓ Warehouse CAN_USE granted to service principal${RESET}"
     else
-      echo -e "${YELLOW}  ⚠ Could not grant warehouse CAN_USE (non-fatal — continuing with GRANT statements)${RESET}"
+      echo -e "${RED}  ✗ Could not grant warehouse CAN_USE — the integration cannot run without it${RESET}"
+      echo -e "${RED}    ${WH_OUT}${RESET}"
+      SQL_FAILED=1
     fi
 
     _sql_state() { echo "$1" | python3 -c \
@@ -229,12 +235,13 @@ else:
 
       state=$(_sql_state "$response")
 
-      # Poll if the warehouse is still starting (PENDING / RUNNING beyond the 50s wait)
+      # Poll if the warehouse is still starting (PENDING / RUNNING beyond the 50s wait).
+      # 30 attempts x 10s = 5 minutes, enough for a cold classic warehouse to start.
       if [ "$state" = "PENDING" ] || [ "$state" = "RUNNING" ]; then
         stmt_id=$(echo "$response" | python3 -c \
           "import sys,json; print(json.load(sys.stdin).get('statement_id',''))" 2>/dev/null || echo "")
         attempts=0
-        while { [ "$state" = "PENDING" ] || [ "$state" = "RUNNING" ]; } && [ $attempts -lt 12 ]; do
+        while { [ "$state" = "PENDING" ] || [ "$state" = "RUNNING" ]; } && [ $attempts -lt 30 ]; do
           sleep 10
           set +e
           response=$(curl -s "${WORKSPACE_HOST}/api/2.0/sql/statements/${stmt_id}" \
@@ -254,8 +261,6 @@ else:
       fi
     }
 
-    SQL_FAILED=0
-
     run_sql "GRANT USE CATALOG ON CATALOG system TO \`${APP_ID}\`"
     run_sql "GRANT USE SCHEMA ON SCHEMA system.billing TO \`${APP_ID}\`"
     run_sql "GRANT USE SCHEMA ON SCHEMA system.compute TO \`${APP_ID}\`"
@@ -273,13 +278,13 @@ else:
   fi
 
   if [ "${SQL_FAILED:-0}" -eq 0 ]; then
-    echo -e "${GREEN}  ✓ System table access granted${RESET}"
+    echo -e "${GREEN}  ✓ Warehouse and system table access granted${RESET}"
   else
     echo -e "${YELLOW}  ⚠ Some grants failed — ensure the authenticated user has Metastore Admin privileges${RESET}"
     echo -e "${YELLOW}    Cost collection requires all grants above to succeed.${RESET}"
   fi
 else
-  echo -e "${YELLOW}  ⚠ Skipped — system table grants not applied.${RESET}"
+  echo -e "${YELLOW}  ⚠ Skipped — warehouse and system table grants not applied.${RESET}"
   echo -e "${YELLOW}    Cost collection will not work until these grants are run.${RESET}"
 fi
 
