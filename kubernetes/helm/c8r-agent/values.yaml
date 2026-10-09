@@ -167,6 +167,10 @@ networkCollection:
     # - name: KEY
     #   value: VALUE
 
+## @param gpuCollection.nvidia Nvidia DCGM Exporter service url, format: http[s]://<service_name>[.namespace[.svc.cluster.local]]:port
+gpuCollection:
+  nvidia: ""
+
 ## @param autoscaling.enabled Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.
 ## @param autoscaling.minReplicas Minimum number of replicas.
 ## @param autoscaling.maxReplicas Maximum number of replicas.

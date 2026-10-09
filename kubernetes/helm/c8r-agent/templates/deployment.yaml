@@ -88,6 +88,10 @@ spec:
             value: {{ .Chart.Version | quote }}
           - name: C8R_HELM_RELEASE_NAME
             value: {{ .Release.Name }}
+          {{- range $k, $v := .Values.gpuCollection }}
+          - name: {{ printf "C8R_GPU_EXPORTER_%s" (upper $k )}}
+            value: {{ $v | quote }}
+          {{- end }}
         {{- with .Values.addEnv }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
