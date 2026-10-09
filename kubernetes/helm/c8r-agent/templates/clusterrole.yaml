@@ -20,10 +20,8 @@ rules:
       - "persistentvolumeclaims"
       - "persistentvolumes"
       - "namespaces"
-      {{- if .Values.networkCollection.enabled }}
       - "endpoints"
       - "services"
-      {{- end }}
     verbs:
       - "get"
       - "list"
@@ -63,3 +61,6 @@ rules:
     resources: ["leases"]
     verbs:
       - "create"
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
