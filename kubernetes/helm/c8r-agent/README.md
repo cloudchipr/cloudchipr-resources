@@ -93,9 +93,35 @@ Requirements and notes:
   `c8r_netmon_collector_mode_info{reason}` says why. No crash loop.
 * The collector runs as uid 0 with `capabilities.drop: [ALL]` plus `BPF`, `PERFMON`,
   `NET_ADMIN` and `SYS_RESOURCE`, a read-only root filesystem and no privilege
-  escalation. This capability set has been verified on kind only.
-  `netmon.collector.privileged=true` is the fallback for node images where it is not
-  enough, typically images that enforce AppArmor or seccomp/LSM policies blocking `bpf()`.
+  escalation, AppArmor-unconfined and with the SELinux type `spc_t` (both below).
+  Verified on kind and on k3s with Ubuntu 20.04 (AppArmor), Amazon Linux 2 and Rocky 8
+  (SELinux enforcing). `netmon.collector.privileged=true` is the fallback for node images
+  where that is still not enough, e.g. a seccomp or other LSM policy blocking `bpf()`.
+* Linux security modules. Both settings only apply to the collector container (not the
+  agent) and are no-ops on nodes without that LSM:
+  * **AppArmor** (`netmon.collector.appArmorUnconfined=true`): the runtime's default
+    profile (`cri-containerd.apparmor.d`, Ubuntu nodes including AKS and Ubuntu EKS)
+    denies writes under `/sys/fs/bpf` and ptrace reads of host processes. Without
+    `Unconfined`, map pinning silently fails on every such node (cgroup v2 included:
+    counters not yet pulled are lost on a collector restart) and the host listener table
+    is denied even with `cgroupV1Support`, so traffic of hostNetwork servers that predate
+    the collector stays unresolved (and each attempt is a kernel audit record). Rendered
+    as `securityContext.appArmorProfile: {type: Unconfined}` on Kubernetes >= 1.30 and as
+    the pod annotation `container.apparmor.security.beta.kubernetes.io/collector:
+    unconfined` before (`helm template` needs `--kube-version` to pick the right one).
+    With `false`, a profile can be set through `netmon.collector.podAnnotations` on
+    clusters older than 1.30.
+  * **SELinux** (`netmon.collector.seLinuxType=spc_t`): with container labelling
+    (RHEL/Rocky with container-selinux, k3s `selinux: true`, OpenShift) the default
+    `container_t` cannot read the host `/proc`, mount cgroup2 or create BPF maps, so the
+    collector stays not ready (`reason="mount_cgroup2"` on cgroup v1 nodes) even with
+    `cgroupV1Support`. `spc_t` (as Cilium uses) lifts that. `""` leaves it unset.
+  * Pod Security Admission: the collector already needs the `privileged` level
+    (hostNetwork, hostPath, added capabilities), which also allows these two.
+  * **OpenShift**: the chart creates no SecurityContextConstraints. Bind the collector
+    ServiceAccount to an SCC that allows hostNetwork, hostPath volumes, uid 0, the added
+    capabilities and a custom SELinux type (`seLinuxContext: RunAsAny`), e.g. the built-in
+    `privileged` SCC.
 * The host's `/proc` is mounted read-only at `/host/proc` (`C8R_NETMON_HOST_PROC`), so
   the collector sees the host pid namespace without `hostPID`. It reads the cgroup
   layout from it and, on cgroup v1 nodes, socket owners and host listeners.
@@ -215,7 +241,9 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `netmon.collector.hostPID` | Share the host PID namespace. Not needed: the host's `/proc` is always mounted read-only at `/host/proc` (`C8R_NETMON_HOST_PROC`), which works with or without it. | `false` |
 | `netmon.collector.cgroupV1Support` | Add `SYS_PTRACE` and `DAC_READ_SEARCH` (host listener table for pre-existing hostNetwork servers, `<proc>/1/root` dataplane hint) and `SYS_ADMIN` (private cgroup2 mount on pure cgroup v1 nodes, e.g. EKS Amazon Linux 2) to the collector. Not needed on cgroup v2 nodes; moot with `privileged`. | `false` |
 | `netmon.collector.attachMode` | Attach mode (`C8R_NETMON_ATTACH_MODE`, rendered only when not `auto`): `auto` detects the node's cgroup layout, `cgroup2` forces the unified behaviour (fails on non-cgroup2 nodes), `legacy` forces owner attribution (testing). `tc` is reserved and rejected. | `auto` |
-| `netmon.collector.privileged` | Run the collector privileged instead of with `netmon.collector.capabilities`. Escape hatch for node images where the capability set is not enough (AppArmor/seccomp/LSM enforcement); the capability set is verified on kind only. | `false` |
+| `netmon.collector.privileged` | Run the collector privileged instead of with `netmon.collector.capabilities`. Escape hatch for node images where the capability set plus `appArmorUnconfined`/`seLinuxType` is still not enough (e.g. a seccomp or other LSM policy blocking `bpf()`). | `false` |
+| `netmon.collector.appArmorUnconfined` | Run the collector container AppArmor-unconfined (`appArmorProfile: {type: Unconfined}` on Kubernetes >= 1.30, the `container.apparmor.security.beta.kubernetes.io/collector` pod annotation before). The runtime default profile denies map pinning under /sys/fs/bpf and the host listener table. No effect on nodes without AppArmor. | `true` |
+| `netmon.collector.seLinuxType` | SELinux type of the collector container (`seLinuxOptions.type`). `container_t` cannot read the host /proc, mount cgroup2 or create BPF maps. Ignored on nodes without SELinux. `""` leaves it unset. | `spc_t` |
 | `netmon.collector.capabilities` | Linux capabilities added to the collector (all others are dropped). BPF+PERFMON: load programs/maps and ring buffer (kernel >= 5.8); NET_ADMIN: attach cgroup_skb programs and read conntrack via netlink; SYS_RESOURCE: raise RLIMIT_MEMLOCK on kernels < 5.11. | `["BPF","PERFMON","NET_ADMIN","SYS_RESOURCE"]` |
 | `netmon.collector.resources.requests.cpu` | Collector CPU request (spike: ~0.5% of a core). | `20m` |
 | `netmon.collector.resources.requests.memory` | Collector memory request (spike: ~15MB RSS). | `64Mi` |

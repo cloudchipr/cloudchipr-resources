@@ -3,6 +3,19 @@
 {{- $tls := .Values.netmon.tls }}
 {{- $name := include "..netmon.collectorName" . }}
 {{- $ns := include "..namespace" . }}
+{{- /*
+AppArmor: Kubernetes >= 1.30 has securityContext.appArmorProfile (rendered on
+the container below); older clusters only read the beta pod annotation. Only
+one form is rendered: on >= 1.30 the API server copies the field into the
+annotation itself for older kubelets, and a hand-written annotation would only
+draw a deprecation warning.
+*/}}
+{{- $aaField := semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
+{{- $podAnnotations := deepCopy ($c.podAnnotations | default dict) }}
+{{- if and $c.appArmorUnconfined (not $aaField) }}
+{{- /* merge keeps a value the user set in podAnnotations. */}}
+{{- $podAnnotations = merge $podAnnotations (dict "container.apparmor.security.beta.kubernetes.io/collector" "unconfined") }}
+{{- end }}
 # netmon collector: one pod per node running c8r-agent with C8R_MODE=collector.
 # It attaches eBPF cgroup_skb programs to the node's root cgroup v2, reads
 # conntrack via netlink, and serves cumulative per-window counters that the
@@ -120,7 +133,7 @@ spec:
         {{- with $c.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with $c.podAnnotations }}
+      {{- with $podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -276,6 +289,20 @@ spec:
               add:
                 {{- . | nindent 16 }}
               {{- end }}
+            {{- end }}
+            {{- if and $c.appArmorUnconfined $aaField }}
+            # netmon.collector.appArmorUnconfined: the runtime's default
+            # AppArmor profile denies writes under /sys/fs/bpf (map pinning)
+            # and ptrace reads of host processes (listener table).
+            appArmorProfile:
+              type: Unconfined
+            {{- end }}
+            {{- with $c.seLinuxType }}
+            # netmon.collector.seLinuxType: container_t may not read the host
+            # /proc, mount cgroup2 or create BPF maps. Container level, so it
+            # does not extend to other containers added to the pod.
+            seLinuxOptions:
+              type: {{ . | quote }}
             {{- end }}
           {{- with $c.resources }}
           resources:

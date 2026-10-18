@@ -140,6 +140,13 @@ so a bad combination fails every install/upgrade/template run.
 {{- if not (kindIs "bool" .Values.netmon.collector.cgroupV1Support) }}
 {{- fail "netmon.collector.cgroupV1Support must be a boolean (true or false)" }}
 {{- end }}
+{{- if not (kindIs "bool" .Values.netmon.collector.appArmorUnconfined) }}
+{{- fail "netmon.collector.appArmorUnconfined must be a boolean (true or false)" }}
+{{- end }}
+{{- $selType := .Values.netmon.collector.seLinuxType }}
+{{- if not (or (kindIs "string" $selType) (kindIs "invalid" $selType)) }}
+{{- fail "netmon.collector.seLinuxType must be a string (an SELinux type such as spc_t, or \"\" to leave it unset)" }}
+{{- end }}
 {{- end }}
 {{- end }}
 
