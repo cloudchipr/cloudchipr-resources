@@ -96,6 +96,19 @@ netmon (eBPF network monitoring) helpers
 */}}
 
 {{/*
+netmon.collector.resolve as a string. An unquoted `off` in a values file is
+YAML boolean false (and `on` true), so booleans map to off / auto.
+*/}}
+{{- define "..netmon.collectorResolve" -}}
+{{- $v := .Values.netmon.collector.resolve }}
+{{- if kindIs "bool" $v }}
+{{- ternary "auto" "off" $v }}
+{{- else }}
+{{- $v | default "auto" | toString }}
+{{- end }}
+{{- end }}
+
+{{/*
 Validate the netmon values. Included from deployment.yaml (always rendered),
 so a bad combination fails every install/upgrade/template run.
 */}}
@@ -103,6 +116,18 @@ so a bad combination fails every install/upgrade/template run.
 {{- if .Values.netmon.enabled }}
 {{- if .Values.networkCollection.enabled }}
 {{- fail "netmon.enabled and networkCollection.enabled are mutually exclusive: netmon (eBPF) replaces the kubenetmon conntrack collection. Set networkCollection.enabled=false." }}
+{{- end }}
+{{- $resolve := .Values.netmon.resolveMode | default "snapshot" }}
+{{- if not (has $resolve (list "snapshot" "ondemand" "auto")) }}
+{{- fail (printf "netmon.resolveMode must be one of snapshot, ondemand, auto (got %q)" $resolve) }}
+{{- end }}
+{{- $autoPods := .Values.netmon.resolveAutoPods }}
+{{- if not (and (or (kindIs "int" $autoPods) (kindIs "int64" $autoPods) (kindIs "float64" $autoPods)) (ge (float64 $autoPods) 1.0) (eq (float64 $autoPods) (floor (float64 $autoPods)))) }}
+{{- fail (printf "netmon.resolveAutoPods must be a positive integer (got %v)" $autoPods) }}
+{{- end }}
+{{- $collectorResolve := include "..netmon.collectorResolve" . }}
+{{- if not (has $collectorResolve (list "auto" "off")) }}
+{{- fail (printf "netmon.collector.resolve must be one of auto, off (got %q)" $collectorResolve) }}
 {{- end }}
 {{- $mode := .Values.netmon.tls.mode }}
 {{- if not (has $mode (list "auto" "files" "disabled")) }}

@@ -211,6 +211,8 @@ spec:
               value: {{ $c.drainInterval | quote }}
             - name: C8R_NETMON_CONNTRACK
               value: {{ $c.conntrack | quote }}
+            - name: C8R_NETMON_RESOLVE
+              value: {{ include "..netmon.collectorResolve" . | quote }}
             {{- with $c.pinPath }}
             - name: C8R_NETMON_PIN_PATH
               value: {{ . | quote }}

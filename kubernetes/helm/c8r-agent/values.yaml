@@ -180,13 +180,17 @@ netmon:
   windowSeconds: 60
   ## @param netmon.retentionSeconds Collector epoch retention in seconds (`C8R_NETMON_RETENTION_SECONDS`), set on both sides. Must be at least one window.
   retentionSeconds: 900
+  ## @param netmon.resolveMode How collectors learn remote pod/node/Service identities (`C8R_NETMON_RESOLVE_MODE`): `snapshot` (every collector polls the full cluster snapshot), `ondemand` (collectors get a slim snapshot and ask the agent `/v1/resolve` for the in-cluster IPs they actually talk to; for large clusters) or `auto` (the leader switches to `ondemand` above `resolveAutoPods` pod IPs and back below 75% of it). Collectors that predate on-demand resolution keep getting the full snapshot.
+  resolveMode: snapshot
+  ## @param netmon.resolveAutoPods Pod IP count above which `resolveMode=auto` switches to on-demand resolution (`C8R_NETMON_RESOLVE_AUTO_PODS`, a positive integer).
+  resolveAutoPods: 20000
   service:
     ## @param netmon.service.name Name of the agent Service the collectors dial (`C8R_NETMON_SERVICE_NAME`). Its DNS names are in the agent certificate.
     name: c8r-agent-netmon
     ## @param netmon.service.annotations Annotations for the netmon Service.
     annotations: {}
   agent:
-    ## @param netmon.agent.serverPort Agent netmon API port (`C8R_NETMON_SERVER_PORT`): `/v1/metadata`, `/v1/cloudranges`, `/v1/certs/sign`. TLS unless `netmon.tls.mode=disabled`.
+    ## @param netmon.agent.serverPort Agent netmon API port (`C8R_NETMON_SERVER_PORT`): `/v1/metadata`, `/v1/cloudranges`, `/v1/resolve`, `/v1/resolve/changes`, `/v1/certs/sign`. TLS unless `netmon.tls.mode=disabled`.
     serverPort: 9410
     ## @param netmon.agent.plainPort Agent plain HTTP port (`C8R_NETMON_PLAIN_PORT`): `/livez`, `/healthz`, `/metrics`. Used by the probes.
     plainPort: 9412
@@ -267,6 +271,8 @@ netmon:
     pinPath: /sys/fs/bpf/c8r-netmon
     ## @param netmon.collector.conntrack Resolve ClusterIP traffic to backends through netlink conntrack (`C8R_NETMON_CONNTRACK`).
     conntrack: true
+    ## @param netmon.collector.resolve On-demand identity resolution on the collector (`C8R_NETMON_RESOLVE`): `auto` (use it whenever the agent offers it, see `netmon.resolveMode`) or `off` (kill switch: always ask for the full snapshot).
+    resolve: auto
     ## @param netmon.collector.logLevel Collector log level.
     logLevel: info
     ## @param netmon.collector.hostPID Share the host PID namespace. Not needed: the host's `/proc` is always mounted read-only at `/host/proc` (`C8R_NETMON_HOST_PROC`), which works with or without it.

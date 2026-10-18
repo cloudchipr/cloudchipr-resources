@@ -111,6 +111,12 @@ spec:
             value: {{ $netmon.windowSeconds | quote }}
           - name: C8R_NETMON_RETENTION_SECONDS
             value: {{ $netmon.retentionSeconds | quote }}
+          - name: C8R_NETMON_RESOLVE_MODE
+            value: {{ $netmon.resolveMode | default "snapshot" | quote }}
+          {{- if eq ($netmon.resolveMode | default "snapshot") "auto" }}
+          - name: C8R_NETMON_RESOLVE_AUTO_PODS
+            value: {{ $netmon.resolveAutoPods | default 20000 | quote }}
+          {{- end }}
           - name: C8R_NETMON_SERVER_PORT
             value: {{ $netmon.agent.serverPort | quote }}
           - name: C8R_NETMON_PLAIN_PORT

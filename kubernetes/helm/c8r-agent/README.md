@@ -202,9 +202,11 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `netmon.enabled` | Enable eBPF network monitoring (collector DaemonSet + agent netmon server). Mutually exclusive with `networkCollection.enabled`. | `false` |
 | `netmon.windowSeconds` | Window length in seconds (`C8R_NETMON_WINDOW_SECONDS`), set on both agent and collectors so they always match. | `60` |
 | `netmon.retentionSeconds` | Collector epoch retention in seconds (`C8R_NETMON_RETENTION_SECONDS`), set on both sides. Must be at least one window. | `900` |
+| `netmon.resolveMode` | How collectors learn remote pod/node/Service identities (`C8R_NETMON_RESOLVE_MODE`): `snapshot` (every collector polls the full cluster snapshot), `ondemand` (collectors get a slim snapshot and ask the agent `/v1/resolve` for the in-cluster IPs they actually talk to; for large clusters) or `auto` (the leader switches to `ondemand` above `resolveAutoPods` pod IPs and back below 75% of it). Collectors that predate on-demand resolution keep getting the full snapshot. | `snapshot` |
+| `netmon.resolveAutoPods` | Pod IP count above which `resolveMode=auto` switches to on-demand resolution (`C8R_NETMON_RESOLVE_AUTO_PODS`, a positive integer). | `20000` |
 | `netmon.service.name` | Name of the agent Service the collectors dial (`C8R_NETMON_SERVICE_NAME`). Its DNS names are in the agent certificate. | `c8r-agent-netmon` |
 | `netmon.service.annotations` | Annotations for the netmon Service. | `{}` |
-| `netmon.agent.serverPort` | Agent netmon API port (`C8R_NETMON_SERVER_PORT`): `/v1/metadata`, `/v1/cloudranges`, `/v1/certs/sign`. TLS unless `netmon.tls.mode=disabled`. | `9410` |
+| `netmon.agent.serverPort` | Agent netmon API port (`C8R_NETMON_SERVER_PORT`): `/v1/metadata`, `/v1/cloudranges`, `/v1/resolve`, `/v1/resolve/changes`, `/v1/certs/sign`. TLS unless `netmon.tls.mode=disabled`. | `9410` |
 | `netmon.agent.plainPort` | Agent plain HTTP port (`C8R_NETMON_PLAIN_PORT`): `/livez`, `/healthz`, `/metrics`. Used by the probes. | `9412` |
 | `netmon.agent.addEnv` | Extra env for the agent container, only when netmon is enabled (e.g. `C8R_NETMON_PULL_DELAY`, `C8R_NETMON_SHARD`). | `[]` |
 | `netmon.cloudRanges.enabled` | Fetch the public cloud provider IP ranges on the agent, served to the collectors on `/v1/cloudranges` (`C8R_NETMON_CLOUD_RANGES_ENABLED`). Air-gapped clusters: set to false or point `urls` at a mirror. | `true` |
@@ -237,6 +239,7 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `netmon.collector.drainInterval` | How often the BPF flow map is drained (`C8R_NETMON_DRAIN_INTERVAL`, min 100ms). | `5s` |
 | `netmon.collector.pinPath` | bpffs directory for map pinning (`C8R_NETMON_PIN_PATH`), keeps undrained counters across collector restarts. Needs bpffs mounted at /sys/fs/bpf on the node (default on EKS, GKE, AKS); without it the collector logs a warning and runs unpinned. "" disables pinning. | `/sys/fs/bpf/c8r-netmon` |
 | `netmon.collector.conntrack` | Resolve ClusterIP traffic to backends through netlink conntrack (`C8R_NETMON_CONNTRACK`). | `true` |
+| `netmon.collector.resolve` | On-demand identity resolution on the collector (`C8R_NETMON_RESOLVE`): `auto` (use it whenever the agent offers it, see `netmon.resolveMode`) or `off` (kill switch: always ask for the full snapshot). | `auto` |
 | `netmon.collector.logLevel` | Collector log level. | `info` |
 | `netmon.collector.hostPID` | Share the host PID namespace. Not needed: the host's `/proc` is always mounted read-only at `/host/proc` (`C8R_NETMON_HOST_PROC`), which works with or without it. | `false` |
 | `netmon.collector.cgroupV1Support` | Add `SYS_PTRACE` and `DAC_READ_SEARCH` (host listener table for pre-existing hostNetwork servers, `<proc>/1/root` dataplane hint) and `SYS_ADMIN` (private cgroup2 mount on pure cgroup v1 nodes, e.g. EKS Amazon Linux 2) to the collector. Not needed on cgroup v2 nodes; moot with `privileged`. | `false` |
