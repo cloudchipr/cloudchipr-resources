@@ -1,7 +1,8 @@
 {{- if .Values.autoscaling.enabled }}
-{{- if not .Values.networkCollection.enabled -}}
-{{- fail "autoscaling.enabled requires networkCollection.enabled=true: the HPA scales on the c8r-network-agent container, which only exists when network collection is enabled." -}}
+{{- if not (or .Values.networkCollection.enabled .Values.netmon.enabled) -}}
+{{- fail "autoscaling.enabled requires networkCollection.enabled=true or netmon.enabled=true: without either the agent is a single leader-elected worker and extra replicas only stand by." -}}
 {{- end }}
+{{- $container := include "..hpaContainer" . }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -31,7 +32,7 @@ spec:
     - type: ContainerResource
       containerResource:
         name: cpu
-        container: c8r-network-agent
+        container: {{ $container }}
         target:
           type: Utilization
           averageUtilization: {{ . }}
@@ -40,7 +41,7 @@ spec:
     - type: ContainerResource
       containerResource:
         name: memory
-        container: c8r-network-agent
+        container: {{ $container }}
         target:
           type: Utilization
           averageUtilization: {{ . }}

@@ -1,4 +1,6 @@
+{{- include "..netmon.validate" . }}
 {{ $createSecret := (include "..createSecret" .) }}
+{{- $netmon := .Values.netmon }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -92,6 +94,67 @@ spec:
           - name: {{ printf "C8R_GPU_EXPORTER_%s" (upper $k )}}
             value: {{ $v | quote }}
           {{- end }}
+          {{- if $netmon.enabled }}
+          # netmon server: metadata/enrollment API on every replica, puller on the leader.
+          - name: C8R_NETMON_ENABLED
+            value: "true"
+          # IP SAN of the agent certificate.
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: C8R_NETMON_COLLECTOR_SELECTOR
+            value: {{ include "..netmon.collectorSelector" . | quote }}
+          - name: C8R_NETMON_COLLECTOR_PORT
+            value: {{ $netmon.collector.port | quote }}
+          - name: C8R_NETMON_WINDOW_SECONDS
+            value: {{ $netmon.windowSeconds | quote }}
+          - name: C8R_NETMON_RETENTION_SECONDS
+            value: {{ $netmon.retentionSeconds | quote }}
+          - name: C8R_NETMON_SERVER_PORT
+            value: {{ $netmon.agent.serverPort | quote }}
+          - name: C8R_NETMON_PLAIN_PORT
+            value: {{ $netmon.agent.plainPort | quote }}
+          - name: C8R_NETMON_SERVICE_NAME
+            value: {{ $netmon.service.name | quote }}
+          {{- include "..netmon.tlsEnv" (dict "root" . "side" "agent") | nindent 10 }}
+          - name: C8R_NETMON_CLOUD_RANGES_ENABLED
+            value: {{ $netmon.cloudRanges.enabled | quote }}
+          - name: C8R_NETMON_CLOUD_RANGES_TIMEOUT
+            value: {{ $netmon.cloudRanges.timeout | quote }}
+          {{- with $netmon.cloudRanges.urls }}
+          {{- $pairs := list }}
+          {{- range $provider := keys . | sortAlpha }}
+          {{- $pairs = append $pairs (printf "%s=%s" $provider (index $netmon.cloudRanges.urls $provider)) }}
+          {{- end }}
+          # provider=url pairs, sorted by provider for a stable rendering.
+          - name: C8R_NETMON_CLOUD_RANGES_URLS
+            value: {{ join "," $pairs | quote }}
+          {{- end }}
+          {{- with $netmon.tls.extraSANs }}
+          - name: C8R_NETMON_TLS_EXTRA_SANS
+            value: {{ join "," . | quote }}
+          {{- end }}
+          {{- if $netmon.ui.enabled }}
+          - name: C8R_NETMON_UI
+            value: "true"
+          - name: C8R_NETMON_UI_PORT
+            value: {{ $netmon.ui.port | quote }}
+          - name: C8R_NETMON_UI_WINDOWS
+            value: {{ $netmon.ui.windows | quote }}
+          {{- with $netmon.ui.allowedSubjects }}
+          - name: C8R_NETMON_UI_ALLOWED_SUBJECTS
+            value: {{ join "," . | quote }}
+          {{- end }}
+          {{- if $netmon.ui.insecure }}
+          - name: C8R_NETMON_UI_INSECURE
+            value: "true"
+          {{- end }}
+          {{- end }}
+          {{- with $netmon.agent.addEnv }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
+          {{- end }}
         {{- with .Values.addEnv }}
           {{- toYaml . | nindent 10 }}
         {{- end }}
@@ -108,6 +171,44 @@ spec:
           {{- with .Values.addEnvFrom }}
           {{- toYaml . | nindent 10 }}
           {{- end }}
+        {{- end }}
+        {{- if $netmon.enabled }}
+        ports:
+          - name: netmon
+            containerPort: {{ $netmon.agent.serverPort }}
+            protocol: TCP
+          - name: netmon-plain
+            containerPort: {{ $netmon.agent.plainPort }}
+            protocol: TCP
+          {{- if $netmon.ui.enabled }}
+          - name: netmon-ui
+            containerPort: {{ $netmon.ui.port }}
+            protocol: TCP
+          {{- end }}
+        # Plain port: /healthz is 503 until the netmon TLS material is
+        # loaded, so the netmon Service only routes collectors to replicas
+        # that can serve them. /livez is 200 while the process serves.
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: netmon-plain
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: netmon-plain
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+        {{- if eq $netmon.tls.mode "files" }}
+        volumeMounts:
+          - name: netmon-tls
+            mountPath: {{ $netmon.tls.files.mountPath }}
+            readOnly: true
+        {{- end }}
         {{- end }}
       {{- if .Values.networkCollection.enabled }}
       - name: c8r-network-agent
@@ -173,4 +274,9 @@ spec:
           {{- end }}
         {{- end }}
       {{- end }}
-
+      {{- if and $netmon.enabled (eq $netmon.tls.mode "files") }}
+      volumes:
+        - name: netmon-tls
+          secret:
+            secretName: {{ $netmon.tls.files.agent.secretName }}
+      {{- end }}

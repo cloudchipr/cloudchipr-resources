@@ -1,0 +1,118 @@
+{{- if .Values.netmon.enabled }}
+{{- $tls := .Values.netmon.tls }}
+{{- $ns := include "..namespace" . }}
+{{- $rbacName := include "..netmon.agentRBACName" . }}
+{{- $needTokenReview := or (eq $tls.mode "auto") .Values.netmon.ui.enabled }}
+# Every agent replica serves /v1/metadata, /v1/cloudranges and
+# /v1/certs/sign, so the Service selects all of them. Collectors dial it via
+# C8R_NETMON_SERVER_URL; its DNS names are the agent certificate's SANs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.netmon.service.name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-server
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.netmon.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "..selectorLabels" . | nindent 4 }}
+  ports:
+    - name: netmon
+      port: {{ .Values.netmon.agent.serverPort }}
+      targetPort: netmon
+      protocol: TCP
+{{- if $needTokenReview }}
+---
+# Cluster-scoped additions for the agent (pods/nodes/services get/list/watch
+# for the metadata snapshot, collector discovery and the enrollment pod/node
+# lookups are already in the main ClusterRole).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $rbacName }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-server
+rules:
+  # TokenReview: validates the collectors' service-account tokens on
+  # /v1/certs/sign (auto mode) and the UI login tokens.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  {{- if .Values.netmon.ui.enabled }}
+  # SelfSubjectReview: the UI looks up the agent's own identity (the subject
+  # allowed by default). Optional in the code: it falls back to the token file.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["selfsubjectreviews"]
+    verbs: ["create"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $rbacName }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $rbacName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "..serviceAccountName" . }}
+    namespace: {{ $ns }}
+{{- end }}
+{{- if eq $tls.mode "auto" }}
+---
+# auto mode CA: the first replica creates the CA keypair in the Secret
+# {{ $tls.caName }} and every replica publishes the CA certificate in the
+# ConfigMap of the same name; rotation updates both. The agent only GETs and
+# UPDATEs them by name (no list/watch/patch/delete).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $rbacName }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-server
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    resourceNames: [{{ $tls.caName | quote }}]
+    verbs: ["get", "update"]
+  # RBAC cannot restrict "create" by name (the name is not known at
+  # authorization time), so this is namespace-wide. It is create only: the
+  # agent cannot read or change any other Secret or ConfigMap.
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $rbacName }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $rbacName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "..serviceAccountName" . }}
+    namespace: {{ $ns }}
+{{- end }}
+{{- end }}
