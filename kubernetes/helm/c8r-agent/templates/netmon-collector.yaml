@@ -1,5 +1,7 @@
 {{- if .Values.netmon.enabled }}
 {{- $c := .Values.netmon.collector }}
+{{- /* resourcesPreset, with netmon.collector.resources merged over it per field (..resources). */}}
+{{- $collectorResources := include "..resources" (dict "root" . "component" "collector") }}
 {{- $tls := .Values.netmon.tls }}
 {{- $name := include "..netmon.collectorName" . }}
 {{- $ns := include "..namespace" . }}
@@ -229,12 +231,8 @@ spec:
             {{- end }}
             - name: LOG_LEVEL
               value: {{ $c.logLevel | quote }}
-            {{- if dig "limits" "memory" "" $c.resources }}
-            - name: GOMEMLIMIT
-              valueFrom:
-                resourceFieldRef:
-                  resource: limits.memory
-                  divisor: "1"
+            {{- with include "..gomemlimitEnv" (dict "resources" ($collectorResources | fromYaml) "env" ($c.addEnv | default list)) | trim }}
+            {{- . | nindent 12 }}
             {{- end }}
             {{- with $c.addEnv }}
             {{- toYaml . | nindent 12 }}
@@ -306,9 +304,9 @@ spec:
             seLinuxOptions:
               type: {{ . | quote }}
             {{- end }}
-          {{- with $c.resources }}
+          {{- with $collectorResources }}
           resources:
-            {{- toYaml . | nindent 12 }}
+            {{- . | nindent 12 }}
           {{- end }}
           volumeMounts:
             # The node's root cgroup v2 (C8R_NETMON_CGROUP_ROOT default). Not

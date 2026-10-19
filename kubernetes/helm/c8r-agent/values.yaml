@@ -53,17 +53,67 @@ nodeSelector: {}
 affinity: {}
 ## @param tolerations Tolerations for pod assignment. Applies only to agent, not collector DaemonSet.
 tolerations: []
-## @param resources.requests.cpu CPU request for the container.
-## @param resources.requests.memory Memory request for the container.
-## @param resources.requests.ephemeral-storage Ephemeral storage request for the container.
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-    ephemeral-storage: "128Mi"
-    # limits:
-    #   memory: 512Mi
-    #   ephemeral-storage: "128Mi"
+## @param resourcesPreset Size the agent and the netmon collector for your cluster: `default`, `small`, `medium`, `large`, `xlarge` or `none`. See the table below and the README "Sizing" section. `resources` and `netmon.collector.resources` are merged over the preset field by field.
+##
+## Pick the row for your cluster. Count both nodes and pods and take the
+## larger preset of the two.
+##
+##   preset   cluster size                   agent (c8r-agent container)        collector (per node)        netmon.resolveMode
+##   small    up to ~100 nodes / 3k pods     100m, 256Mi request, 512Mi limit   20m, 64Mi req, 256Mi limit  snapshot (default)
+##   medium   up to ~1k nodes / 30k pods     250m, 1Gi request, 1536Mi limit    20m, 64Mi req, 256Mi limit  auto
+##   large    up to ~3k nodes / 90k pods     500m, 2560Mi request, 4Gi limit    20m, 64Mi req, 256Mi limit  auto or ondemand
+##   xlarge   up to ~5k nodes / 150k pods    1 CPU, 4Gi request, 6Gi limit      20m, 64Mi req, 384Mi limit  auto or ondemand
+##   default  (the default value) netmon disabled: the chart's historical agent requests
+##            (100m, 128Mi, no limit), so existing installs render unchanged.
+##            netmon enabled: same as `small`.
+##   none     the chart sets no requests/limits; only what you put in `resources` and
+##            `netmon.collector.resources` is rendered.
+##   Every agent preset also requests 128Mi ephemeral-storage. No preset sets a CPU
+##   limit: the leader's window commit bursts to a few cores for a few seconds per
+##   window and a CPU limit would only throttle it.
+##
+## Where the agent numbers come from. Measured on synthetic load (laptop, kind and
+## kwok, 1000 flow rows per node per window); real clusters may have more or fewer
+## distinct flows per node, so check the metrics below on your cluster.
+##   - netmon leader window (only the leader holds it): peak RSS 0.67 GB at 1k nodes,
+##     1.85 GB at 3k, 2.97 GB at 5k (0.8-1.2 KB per aggregated flow key; 0.63 keys per
+##     row in the synthetic load).
+##   - netmon metadata (pod/node/Service informers, on EVERY replica): RSS 64 MB at 3k
+##     pods, ~240 MB at 30k, ~1.0 GB at ~112k (about 7 KB per pod); on-demand mode
+##     adds its change log and per-collector state (257-341 MB at 30k pods).
+##   - Cluster collection without netmon stays small even in big clusters: it flushes
+##     metrics to the API as it goes instead of holding them.
+##   - Each memory limit is about 1.5x the measured netmon peak (metadata + window).
+##     Requests are close to that peak, because the Go runtime keeps the memory it
+##     used at the window peak. A memory limit also sets GOMEMLIMIT to 90% of it.
+##   - CPU: on-demand resolve serving is about 0.05 cores at 1000 collectors (0.14
+##     under pod churn); the window commit is a few cores for a few seconds per
+##     window at 5k nodes.
+## Collector: the full snapshot (`netmon.resolveMode=snapshot`) costs a collector up to
+## 36 MB at 30k pods and 173 MB at 150k pods while it swaps snapshots; on-demand
+## resolution keeps its cache under ~32 MiB. The large/xlarge collector rows assume
+## `auto` or `ondemand`; with `snapshot` on xlarge also raise
+## `netmon.collector.resources.requests.memory` to ~160Mi.
+##
+## Check the fit (Prometheus, agent port `netmon.agent.plainPort` /metrics):
+##   c8r_netmon_server_window_peak_heap_bytes  leader heap peak per window; keep it
+##                                             under ~70% of the agent memory limit
+##   c8r_netmon_server_window_keys             aggregated keys per window (~1 KB each)
+##   container_memory_working_set_bytes        agent and collector containers
+##   kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}
+##
+## Override: set `resources` / `netmon.collector.resources`. Every field you set wins;
+## every field you leave out comes from the preset (e.g. setting only
+## `resources.limits.memory=6Gi` keeps the preset's requests). To drop a preset
+## field, use `resourcesPreset: none` and set the whole block.
+## Replicas: one agent replica is enough at every preset. A second replica only
+## gives faster failover (about 15s instead of a pod restart); more add nothing.
+## With HPA (`autoscaling.enabled`) the preset applies to every replica: only the leader
+## holds the window, but any replica can become the leader. The HPA memory target
+## sees the leader's window peaks; consider `autoscaling.targetMemoryUtilizationPercentage: null`.
+resourcesPreset: default
+## @param resources Agent container resources, merged over `resourcesPreset` field by field (`{}` uses the preset as is). Example: `{requests: {memory: 1Gi}, limits: {memory: 3Gi}}`.
+resources: {}
 ## @param securityContext.allowPrivilegeEscalation Allow privilege escalation for the container.
 ## @param securityContext.readOnlyRootFilesystem Read only root filesystem for the container.
 ## @param securityContext.runAsNonRoot Run as non root user for the container.
@@ -293,15 +343,8 @@ netmon:
       - PERFMON
       - NET_ADMIN
       - SYS_RESOURCE
-    ## @param netmon.collector.resources.requests.cpu Collector CPU request (spike: ~0.5% of a core).
-    ## @param netmon.collector.resources.requests.memory Collector memory request (spike: ~15MB RSS).
-    ## @param netmon.collector.resources.limits.memory Collector memory limit. Also exported as GOMEMLIMIT. Raise for nodes with very many flows (`C8R_NETMON_MAX_RING_ROWS`).
-    resources:
-      requests:
-        cpu: 20m
-        memory: 64Mi
-      limits:
-        memory: 256Mi
+    ## @param netmon.collector.resources Collector resources, merged over `resourcesPreset` field by field (`{}` uses the preset: 20m / 64Mi request, 256Mi limit, 384Mi on `xlarge`). A memory limit is also exported as GOMEMLIMIT (90% of it). Raise the limit for nodes with very many flows (`C8R_NETMON_MAX_RING_ROWS`).
+    resources: {}
     ## @param netmon.collector.priorityClassName PriorityClass of the collector pods (e.g. `system-node-critical`). Falls back to top-level `priorityClassName`.
     priorityClassName: ""
     ## @param netmon.collector.tolerations Collector tolerations. Default tolerates every taint so it runs on all nodes.

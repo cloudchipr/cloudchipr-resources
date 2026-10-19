@@ -3,6 +3,14 @@
 Thank you for installing {{ .Chart.Name }}.
 
 Your release is named {{ .Release.Name }}.
+{{- $preset := include "..resourcesPresetName" . }}
+{{- if and .Values.netmon.enabled (has $preset (list "default" "small")) }}
+
+netmon is enabled with resourcesPreset={{ $preset }}{{ if eq $preset "default" }} (sized as "small"){{ end }}, which fits clusters
+up to ~100 nodes / 3k pods. For larger clusters set resourcesPreset to medium,
+large or xlarge (see the chart README, "Sizing") and watch
+c8r_netmon_server_window_peak_heap_bytes on the agent leader.
+{{- end }}
 
 
 

@@ -291,3 +291,218 @@ on, otherwise the agent itself (netmon). The two modes are mutually exclusive
 {{- define "..hpaContainer" -}}
 {{- if .Values.networkCollection.enabled }}c8r-network-agent{{- else }}c8r-agent{{- end }}
 {{- end }}
+
+{{/*
+=============================================================================
+Resource presets (resourcesPreset)
+=============================================================================
+The preset table. Every preset sizes both containers of a cluster size:
+  agent:     the c8r-agent container of the Deployment (every replica).
+  collector: the netmon collector DaemonSet container (one per node).
+The reasoning behind each number is in values.yaml (resourcesPreset) and in
+the README "Sizing" section; keep the three in sync.
+
+"default" is the value-file default and NOT a size: it keeps the chart's
+historical agent requests (100m / 128Mi, no limit) while netmon is disabled,
+so upgrading an existing install renders the same resources, and resolves
+to "small" while netmon is enabled (netmon is new in 4.5.0, so no install
+depends on the old agent default with netmon on). The collector's
+"default" equals "small" (the historical collector default).
+No CPU limits anywhere: the leader's window commit bursts to a few cores for
+a few seconds per window, and a CPU limit would only throttle it.
+*/}}
+{{- define "..resourcesPresetTable" -}}
+default:
+  agent:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 128Mi
+  collector:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+small:
+  agent:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 128Mi
+    limits:
+      memory: 512Mi
+  collector:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+medium:
+  agent:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+      ephemeral-storage: 128Mi
+    limits:
+      memory: 1536Mi
+  collector:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+large:
+  agent:
+    requests:
+      cpu: 500m
+      memory: 2560Mi
+      ephemeral-storage: 128Mi
+    limits:
+      memory: 4Gi
+  collector:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+xlarge:
+  agent:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+      ephemeral-storage: 128Mi
+    limits:
+      memory: 6Gi
+  collector:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 384Mi
+none:
+  agent: {}
+  collector: {}
+{{- end }}
+
+{{/* resourcesPreset as a string; "" (or null) means "default". */}}
+{{- define "..resourcesPresetName" -}}
+{{- .Values.resourcesPreset | default "default" | toString }}
+{{- end }}
+
+{{/*
+Effective resources of one component as YAML. Arg: dict "root" $ "component"
+("agent"|"collector"). Precedence, per field: the user's `resources`
+(agent) / `netmon.collector.resources` (collector) are deep-merged over the
+preset, so every field the user sets wins and every field the user leaves
+out comes from the preset. To drop a preset field (e.g. its memory limit)
+use resourcesPreset=none and set the full block. This is the same merge Helm
+applied to the old built-in defaults, so partial overrides such as
+`--set resources.requests.memory=256Mi` keep rendering what they did.
+*/}}
+{{- define "..resources" -}}
+{{- $root := .root }}
+{{- $name := include "..resourcesPresetName" $root }}
+{{- if and (eq $name "default") (eq .component "agent") $root.Values.netmon.enabled }}
+{{- $name = "small" }}
+{{- end }}
+{{- $table := include "..resourcesPresetTable" $root | fromYaml }}
+{{- $preset := index $table $name | default dict }}
+{{- $base := index $preset .component | default dict | deepCopy }}
+{{- $user := ternary $root.Values.resources $root.Values.netmon.collector.resources (eq .component "agent") | default dict }}
+{{- $res := mergeOverwrite $base (deepCopy $user) }}
+{{- with $res }}
+{{- toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/*
+A memory quantity in bytes, or "" when it is not a plain Kubernetes
+quantity this helper understands (number with an optional binary or decimal
+suffix, e.g. 512Mi, 2Gi, 1.5Gi, 1G, 1073741824). Used for GOMEMLIMIT and the
+request <= limit check; callers fall back gracefully on "".
+*/}}
+{{- define "..memoryBytes" -}}
+{{- $v := . }}
+{{- if or (kindIs "float64" $v) (kindIs "int" $v) (kindIs "int64" $v) }}
+{{- printf "%d" (int64 $v) }}
+{{- else if kindIs "string" $v }}
+{{- $m := regexFindAll "^([0-9]+(?:\\.[0-9]+)?)(Ki|Mi|Gi|Ti|k|M|G|T)?$" $v 1 }}
+{{- if $m }}
+{{- $num := regexReplaceAll "^([0-9]+(?:\\.[0-9]+)?).*$" $v "${1}" | float64 }}
+{{- $suffix := regexReplaceAll "^[0-9.]+" $v "" }}
+{{- $mult := dict "" 1.0 "k" 1e3 "M" 1e6 "G" 1e9 "T" 1e12 "Ki" 1024.0 "Mi" 1048576.0 "Gi" 1073741824.0 "Ti" 1099511627776.0 }}
+{{- printf "%d" (int64 (floor (mulf $num (index $mult $suffix)))) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+GOMEMLIMIT env entry for a container with a memory limit. Arg: dict
+"resources" <effective resources map> "env" <user env list>. The Go runtime
+does not read the cgroup limit itself (the agent binary does not set a
+memory limit either), so without GOMEMLIMIT the GC only reacts to GOGC and
+a window peak can run into the OOM killer. 90% of the limit leaves room for
+what the Go runtime does not track (non-Go mappings, kernel memory charged
+to the container) and for the GC to catch up before the kernel OOM killer
+acts. A limit this helper cannot parse falls back to 100% of the limit
+through the Downward API. Skipped when the user's env
+already sets GOMEMLIMIT.
+*/}}
+{{- define "..gomemlimitEnv" -}}
+{{- $limit := dig "limits" "memory" "" .resources }}
+{{- $userSet := false }}
+{{- range .env }}
+{{- if and (kindIs "map" .) (eq (toString (index . "name")) "GOMEMLIMIT") }}
+{{- $userSet = true }}
+{{- end }}
+{{- end }}
+{{- if and $limit (not $userSet) }}
+{{- $bytes := include "..memoryBytes" $limit }}
+{{- if $bytes }}
+- name: GOMEMLIMIT
+  # 90% of limits.memory ({{ $limit }}).
+  value: {{ printf "%d" (int64 (floor (mulf ($bytes | float64) 0.9))) | quote }}
+{{- else }}
+- name: GOMEMLIMIT
+  valueFrom:
+    resourceFieldRef:
+      resource: limits.memory
+      divisor: "1"
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Validate resourcesPreset and the effective resources. Included from
+deployment.yaml (always rendered).
+*/}}
+{{- define "..resources.validate" -}}
+{{- $name := include "..resourcesPresetName" . }}
+{{- $valid := list "default" "small" "medium" "large" "xlarge" "none" }}
+{{- if not (has $name $valid) }}
+{{- fail (printf "resourcesPreset must be one of %s (got %q)" (join ", " $valid) $name) }}
+{{- end }}
+{{- if not (or (kindIs "map" .Values.resources) (kindIs "invalid" .Values.resources)) }}
+{{- fail "resources must be a map (requests/limits), or {} to use resourcesPreset" }}
+{{- end }}
+{{- if not (or (kindIs "map" .Values.netmon.collector.resources) (kindIs "invalid" .Values.netmon.collector.resources)) }}
+{{- fail "netmon.collector.resources must be a map (requests/limits), or {} to use resourcesPreset" }}
+{{- end }}
+{{- $components := list (list "agent" "resources") }}
+{{- if .Values.netmon.enabled }}
+{{- $components = append $components (list "collector" "netmon.collector.resources") }}
+{{- end }}
+{{- range $components }}
+{{- $res := include "..resources" (dict "root" $ "component" (index . 0)) | fromYaml }}
+{{- $req := include "..memoryBytes" (dig "requests" "memory" "" $res) }}
+{{- $lim := include "..memoryBytes" (dig "limits" "memory" "" $res) }}
+{{- if and $req $lim (gt ($req | float64) ($lim | float64)) }}
+{{- $reqShow := dig "requests" "memory" "" $res }}
+{{- $limShow := dig "limits" "memory" "" $res }}
+{{- if not (kindIs "string" $reqShow) }}{{ $reqShow = $req }}{{ end }}
+{{- if not (kindIs "string" $limShow) }}{{ $limShow = $lim }}{{ end }}
+{{- fail (printf "%s: requests.memory (%s) is above limits.memory (%s) after applying resourcesPreset=%s. Your value is merged over the preset field by field: raise the limit as well, or use resourcesPreset=none and set the full block." (index . 1) $reqShow $limShow (include "..resourcesPresetName" $)) }}
+{{- end }}
+{{- end }}
+{{- end }}

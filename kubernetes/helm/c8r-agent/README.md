@@ -57,6 +57,78 @@ helm uninstall c8r-agent -n c8r-agent
 kubectl delete namespace cloudchipr
 ```
 
+## Sizing
+
+Pick a `resourcesPreset` for your cluster size. Count both nodes and pods and take the
+larger preset of the two:
+
+```bash
+helm upgrade --install c8r-agent ... --set resourcesPreset=medium
+```
+
+| Cluster size | `resourcesPreset` | Agent (`c8r-agent` container) | netmon collector (per node) | Recommended `netmon.resolveMode` |
+| ------------ | ----------------- | ----------------------------- | --------------------------- | -------------------------------- |
+| up to ~100 nodes / 3k pods | `small` | 100m CPU, 256Mi request, 512Mi limit | 20m CPU, 64Mi request, 256Mi limit | `snapshot` (default) |
+| up to ~1k nodes / 30k pods | `medium` | 250m CPU, 1Gi request, 1536Mi limit | 20m CPU, 64Mi request, 256Mi limit | `auto` |
+| up to ~3k nodes / 90k pods | `large` | 500m CPU, 2560Mi request, 4Gi limit | 20m CPU, 64Mi request, 256Mi limit | `auto` or `ondemand` |
+| up to ~5k nodes / 150k pods | `xlarge` | 1 CPU, 4Gi request, 6Gi limit | 20m CPU, 64Mi request, 384Mi limit | `auto` or `ondemand` |
+| any | `default` (the default) | netmon off: 100m CPU, 128Mi request, no limit (unchanged from earlier chart versions). netmon on: as `small` | as `small` | |
+| any | `none` | nothing; only your `resources` | nothing; only your `netmon.collector.resources` | |
+
+Every agent preset also requests 128Mi of ephemeral storage. No preset sets a CPU limit:
+the netmon leader's window commit bursts to a few cores for a few seconds per window, and
+a CPU limit would only slow it down. When a container gets a memory limit, the chart also
+sets `GOMEMLIMIT` to 90% of it, so the Go garbage collector works harder before the
+kernel OOM killer steps in.
+
+Where the numbers come from. They were measured on synthetic load (1000 flow rows per
+node per window); real clusters may have more or fewer distinct flows per node, so check
+the metrics below on yours.
+
+* netmon leader window: only the leader replica holds it. Peak RSS was 0.67 GB at 1k
+  nodes, 1.85 GB at 3k and 2.97 GB at 5k (0.8–1.2 KB per aggregated flow key).
+* netmon metadata (pod, node and Service informers): held by every replica. RSS was 64 MB
+  at 3k pods, about 240 MB at 30k and about 1.0 GB at about 112k (about 7 KB per pod).
+  On-demand mode adds a change log and per-collector state (257–341 MB at 30k pods).
+* Cluster collection without netmon stays small even in big clusters, because it flushes
+  metrics to the API as it goes instead of holding them.
+* Each memory limit is about 1.5x the measured netmon peak (metadata plus window).
+  Requests are close to that peak, because the Go runtime keeps the memory it used at the
+  window peak.
+* Collector: in `snapshot` mode each collector holds the full cluster snapshot, up to
+  36 MB at 30k pods and 173 MB at 150k while it swaps versions. In `auto`/`ondemand` mode
+  its cache stays under about 32 MiB. The `large`/`xlarge` collector rows assume `auto` or
+  `ondemand`. To stay on `snapshot` at `xlarge`, also set
+  `netmon.collector.resources.requests.memory=160Mi`.
+
+Above about 5k nodes or 150k pods nothing has been measured. Start from `xlarge`, set your
+own `resources`, and watch the metrics.
+
+Check the fit with Prometheus (agent `/metrics` on `netmon.agent.plainPort`, collector
+`/metrics` on `netmon.collector.plainPort`):
+
+| Metric | What to look for |
+| ------ | ---------------- |
+| `c8r_netmon_server_window_peak_heap_bytes` | Leader heap peak per window. Keep it under about 70% of the agent memory limit. |
+| `c8r_netmon_server_window_keys` | Aggregated flow keys per window, about 1 KB of leader memory each. |
+| `container_memory_working_set_bytes{container=~"c8r-agent\|collector"}` | Steady and peak memory against the request and the limit. |
+| `kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}` | The limit is too low. Move up one preset or raise `limits.memory`. |
+
+Overriding. `resources` (agent) and `netmon.collector.resources` (collector) are merged
+over the preset field by field. A field you set wins. A field you leave out comes from the
+preset. For example, `--set resourcesPreset=large --set resources.limits.memory=6Gi` keeps
+the `large` requests and raises only the limit. To drop a preset field, such as a memory
+limit, set `resourcesPreset=none` and give the whole block. The chart refuses a memory
+request above the memory limit after the merge.
+
+One agent replica is enough at every preset. A second replica only gives faster failover
+(a standby takes over in about 15 seconds instead of waiting for a new pod); more replicas
+add nothing, because only the leader does the window work.
+
+With `autoscaling.enabled` (netmon), every replica gets the preset. Only the leader does the
+window work, but any replica can become the leader. The HPA memory target also sees the
+leader's window peaks, so consider `autoscaling.targetMemoryUtilizationPercentage=null`.
+
 ## Network monitoring (netmon, eBPF)
 
 `netmon.enabled=true` deploys the eBPF network monitoring of c8r-agent. It replaces
@@ -153,9 +225,9 @@ Requirements and notes:
   `netmon.cloudRanges.enabled=false` or point `netmon.cloudRanges.urls` at a mirror, e.g.
   `--set netmon.cloudRanges.urls.aws=https://mirror.internal/aws/ip-ranges.json`.
 * Sizing: the leader's netmon pipeline memory grows with flow cardinality (the number
-  of distinct flows per window), not just with node count. The default agent
-  `resources` fit small clusters; for large or very chatty clusters set a higher memory
-  request/limit on the agent and watch the leader's memory before tightening it.
+  of distinct flows per window), not just with node count. With netmon enabled the
+  `default` preset is `small` (up to ~100 nodes); pick a larger `resourcesPreset` for
+  bigger clusters, see [Sizing](#sizing).
 * Collectors bind ports 9408 and 9409 on the node IP, so only one netmon release per
   cluster. Allow agent pods to reach node IPs on 9409, and nodes to reach the agent
   Service on 9410, if NetworkPolicies or security groups restrict that.
@@ -248,9 +320,7 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `netmon.collector.appArmorUnconfined` | Run the collector container AppArmor-unconfined (`appArmorProfile: {type: Unconfined}` on Kubernetes >= 1.30, the `container.apparmor.security.beta.kubernetes.io/collector` pod annotation before). The runtime default profile denies map pinning under /sys/fs/bpf and the host listener table. No effect on nodes without AppArmor. | `true` |
 | `netmon.collector.seLinuxType` | SELinux type of the collector container (`seLinuxOptions.type`). `container_t` cannot read the host /proc, mount cgroup2 or create BPF maps. Ignored on nodes without SELinux. `""` leaves it unset. | `spc_t` |
 | `netmon.collector.capabilities` | Linux capabilities added to the collector (all others are dropped). BPF+PERFMON: load programs/maps and ring buffer (kernel >= 5.8); NET_ADMIN: attach cgroup_skb programs and read conntrack via netlink; SYS_RESOURCE: raise RLIMIT_MEMLOCK on kernels < 5.11. | `["BPF","PERFMON","NET_ADMIN","SYS_RESOURCE"]` |
-| `netmon.collector.resources.requests.cpu` | Collector CPU request (spike: ~0.5% of a core). | `20m` |
-| `netmon.collector.resources.requests.memory` | Collector memory request (spike: ~15MB RSS). | `64Mi` |
-| `netmon.collector.resources.limits.memory` | Collector memory limit. Also exported as GOMEMLIMIT. Raise for nodes with very many flows (`C8R_NETMON_MAX_RING_ROWS`). | `256Mi` |
+| `netmon.collector.resources` | Collector resources, merged over `resourcesPreset` field by field (`{}` uses the preset: 20m / 64Mi request, 256Mi limit, 384Mi on `xlarge`). A memory limit is also exported as GOMEMLIMIT (90% of it). Raise the limit for nodes with very many flows (`C8R_NETMON_MAX_RING_ROWS`). | `{}` |
 | `netmon.collector.priorityClassName` | PriorityClass of the collector pods (e.g. `system-node-critical`). Falls back to top-level `priorityClassName`. | `""` |
 | `netmon.collector.tolerations` | Collector tolerations. Default tolerates every taint so it runs on all nodes. | `[{"operator":"Exists"}]` |
 | `netmon.collector.nodeSelector` | Collector node selector. | `{}` |
@@ -293,9 +363,8 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `nodeSelector`                                                     | Node Selector labels for pod assignment. Applies only to agent, not collector DaemonSet.                                                             | `{}`                   |
 | `affinity`                                                         | Affinity settings for pod assignment. Applies only to agent, not collector DaemonSet.                                                                | `{}`                   |
 | `tolerations`                                                      | Tolerations for pod assignment. Applies only to agent, not collector DaemonSet.                                                                      | `[]`                   |
-| `resources.requests.cpu`                                           | CPU request for the container.                                                                                                                       | `100m`                 |
-| `resources.requests.memory`                                        | Memory request for the container.                                                                                                                    | `128Mi`                |
-| `resources.requests.ephemeral-storage`                             | Ephemeral storage request for the container.                                                                                                         | `128Mi`                |
+| `resourcesPreset`                                                  | Size the agent and the netmon collector: `default`, `small`, `medium`, `large`, `xlarge` or `none`. See [Sizing](#sizing).                           | `default`              |
+| `resources`                                                        | Agent container resources, merged over `resourcesPreset` field by field (`{}` uses the preset as is).                                                | `{}`                   |
 | `securityContext.allowPrivilegeEscalation`                         | Allow privilege escalation for the container.                                                                                                        | `false`                |
 | `securityContext.readOnlyRootFilesystem`                           | Read only root filesystem for the container.                                                                                                         | `false`                |
 | `securityContext.runAsNonRoot`                                     | Run as non root user for the container.                                                                                                              | `true`                 |

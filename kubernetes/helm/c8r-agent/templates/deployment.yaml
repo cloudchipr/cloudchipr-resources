@@ -1,4 +1,5 @@
 {{- include "..netmon.validate" . }}
+{{- include "..resources.validate" . }}
 {{ $createSecret := (include "..createSecret" .) }}
 {{- $netmon := .Values.netmon }}
 apiVersion: apps/v1
@@ -73,9 +74,11 @@ spec:
         securityContext:
           {{- toYaml . | nindent 12 }}
         {{- end }}
-        {{- with .Values.resources }}
+        {{- /* resourcesPreset, with `resources` merged over it per field (..resources). */}}
+        {{- $agentResources := include "..resources" (dict "root" . "component" "agent") }}
+        {{- with $agentResources }}
         resources:
-          {{- toYaml . | nindent 12 }}
+          {{- . | nindent 12 }}
         {{- end }}
         env:
           - name: POD_NAMESPACE
@@ -90,6 +93,10 @@ spec:
             value: {{ .Chart.Version | quote }}
           - name: C8R_HELM_RELEASE_NAME
             value: {{ .Release.Name }}
+          {{- $agentEnv := concat (.Values.addEnv | default list) (ternary ($netmon.agent.addEnv | default list) list $netmon.enabled) }}
+          {{- with include "..gomemlimitEnv" (dict "resources" ($agentResources | fromYaml) "env" $agentEnv) | trim }}
+          {{- . | nindent 10 }}
+          {{- end }}
           {{- range $k, $v := .Values.gpuCollection }}
           - name: {{ printf "C8R_GPU_EXPORTER_%s" (upper $k )}}
             value: {{ $v | quote }}
