@@ -1,0 +1,391 @@
+{{- if .Values.netmon.enabled }}
+{{- $c := .Values.netmon.collector }}
+{{- /* resourcesPreset, with netmon.collector.resources merged over it per field (..resources). */}}
+{{- $collectorResources := include "..resources" (dict "root" . "component" "collector") }}
+{{- $tls := .Values.netmon.tls }}
+{{- $name := include "..netmon.collectorName" . }}
+{{- $ns := include "..namespace" . }}
+{{- /*
+AppArmor: Kubernetes >= 1.30 has securityContext.appArmorProfile (rendered on
+the container below); older clusters only read the beta pod annotation. Only
+one form is rendered: on >= 1.30 the API server copies the field into the
+annotation itself for older kubelets, and a hand-written annotation would only
+draw a deprecation warning.
+*/}}
+{{- $aaField := semverCompare ">=1.30-0" .Capabilities.KubeVersion.Version }}
+{{- $podAnnotations := deepCopy ($c.podAnnotations | default dict) }}
+{{- if and $c.appArmorUnconfined (not $aaField) }}
+{{- /* merge keeps a value the user set in podAnnotations. */}}
+{{- $podAnnotations = merge $podAnnotations (dict "container.apparmor.security.beta.kubernetes.io/collector" "unconfined") }}
+{{- end }}
+# netmon collector: one pod per node running c8r-agent with C8R_MODE=collector.
+# It attaches eBPF cgroup_skb programs to the node's root cgroup v2, reads
+# conntrack via netlink, and serves cumulative per-window counters that the
+# agent leader pulls. It must run in the agent's namespace: the leader discovers
+# collectors and signs their certificates only there.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "..netmon.collectorServiceAccountName" . }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-collector
+  {{- with $c.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+# The default projected token authenticates the collector's informers. It
+# enrolls (POST /v1/certs/sign) with a separate token for the audience
+# c8r-netmon (volume enroll-token), so what it sends the agent is useless
+# against the API server. The agent accepts enrollment tokens of this
+# service account only (C8R_NETMON_COLLECTOR_SERVICE_ACCOUNT).
+automountServiceAccountToken: true
+---
+# Cluster-scoped reads, all from identity resolution on the collector's own
+# node: a pod informer (fieldSelector spec.nodeName=<node>) maps local cgroups
+# to pods/containers; a node informer (metadata.name=<node>) plus a node GET
+# read provider id, zone, region and instance type. RBAC cannot scope by
+# field selector, hence cluster-wide get/list/watch.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-collector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "..netmon.collectorServiceAccountName" . }}
+    namespace: {{ $ns }}
+{{- if eq $tls.mode "auto" }}
+---
+# auto mode: the collector trusts the CA bundle the agent publishes in the
+# ConfigMap {{ $tls.caName }}. Its informer lists/watches with the field
+# selector metadata.name={{ $tls.caName }}, which RBAC authorizes against
+# resourceNames, so the collector can read no other ConfigMap.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-collector
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: [{{ $tls.caName | quote }}]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "..netmon.collectorServiceAccountName" . }}
+    namespace: {{ $ns }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    app.kubernetes.io/component: netmon-collector
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "..netmon.collectorSelectorLabels" . | nindent 6 }}
+  {{- with $c.updateStrategy }}
+  updateStrategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "..netmon.collectorSelectorLabels" . | nindent 8 }}
+        {{- with $c.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "..netmon.collectorServiceAccountName" . }}
+      automountServiceAccountToken: true
+      {{- with $c.priorityClassName | default .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      # hostNetwork: the API listens on the node IP (the leader dials it and
+      # verifies the certificate's IP SAN against it) and conntrack is read
+      # in the node's network namespace.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- if $c.hostPID }}
+      # Optional and normally unneeded: the host's /proc is mounted at
+      # /host/proc either way (C8R_NETMON_HOST_PROC), which sees the host pid
+      # namespace with or without hostPID.
+      hostPID: true
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $c.terminationGracePeriodSeconds }}
+      {{- with $c.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $c.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: collector
+          image: {{ include "..netmon.collectorImage" . }}
+          imagePullPolicy: {{ default .Values.image.pullPolicy $c.image.pullPolicy }}
+          env:
+            - name: C8R_MODE
+              value: collector
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Enrollment: the agent checks that the token's pod runs on that
+            # node and that the CSR's IP SANs are addresses of the pod/node.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: C8R_NETMON_SERVER_URL
+              value: {{ include "..netmon.serverURL" . | quote }}
+            {{- include "..netmon.tlsEnv" (dict "root" . "side" "collector") | nindent 12 }}
+            - name: C8R_NETMON_PORT
+              value: {{ $c.port | quote }}
+            - name: C8R_NETMON_PLAIN_PORT
+              value: {{ $c.plainPort | quote }}
+            - name: C8R_NETMON_WINDOW_SECONDS
+              value: {{ .Values.netmon.windowSeconds | quote }}
+            - name: C8R_NETMON_RETENTION_SECONDS
+              value: {{ .Values.netmon.retentionSeconds | quote }}
+            - name: C8R_NETMON_DRAIN_INTERVAL
+              value: {{ $c.drainInterval | quote }}
+            - name: C8R_NETMON_CONNTRACK
+              value: {{ $c.conntrack | quote }}
+            - name: C8R_NETMON_RESOLVE
+              value: {{ include "..netmon.collectorResolve" . | quote }}
+            {{- with $c.pinPath }}
+            - name: C8R_NETMON_PIN_PATH
+              value: {{ . | quote }}
+            {{- end }}
+            # procfs of the host pid namespace (hostPath /proc, read-only):
+            # cgroup layout detection (<proc>/1/mountinfo), socket owners and
+            # the host listener table on cgroup v1 nodes. C8R_NETMON_HOST_ROOT
+            # is left unset: it defaults to <C8R_NETMON_HOST_PROC>/1/root.
+            - name: C8R_NETMON_HOST_PROC
+              value: /host/proc
+            {{- if ne (toString $c.attachMode) "auto" }}
+            - name: C8R_NETMON_ATTACH_MODE
+              value: {{ $c.attachMode | quote }}
+            {{- end }}
+            - name: LOG_LEVEL
+              value: {{ $c.logLevel | quote }}
+            {{- with include "..gomemlimitEnv" (dict "resources" ($collectorResources | fromYaml) "env" ($c.addEnv | default list)) | trim }}
+            {{- . | nindent 12 }}
+            {{- end }}
+            {{- with $c.addEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with $c.addEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: plain
+              containerPort: {{ $c.plainPort }}
+              protocol: TCP
+            - name: api
+              containerPort: {{ $c.port }}
+              protocol: TCP
+          # Readiness: /healthz is 503 until the collector is enrolled, so the
+          # leader only discovers (Ready) collectors that can serve the mTLS
+          # API. Liveness: /livez checks only local health (eBPF attached and
+          # draining), so a collector that cannot reach the agent stays
+          # unready instead of being restarted.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: plain
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: plain
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            {{- if $c.privileged }}
+            privileged: true
+            {{- else }}
+            privileged: false
+            # uid 0: added capabilities only land in the effective set for
+            # root (no ambient caps), and pinning writes to the host bpffs.
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              {{- with include "..netmon.collectorCapabilities" . }}
+              # netmon.collector.capabilities{{ if $c.cgroupV1Support }}, plus SYS_PTRACE
+              # and DAC_READ_SEARCH (host listener table, <proc>/1/root
+              # dataplane hint) and SYS_ADMIN (private cgroup2 mount on
+              # cgroup v1 nodes) from netmon.collector.cgroupV1Support{{ end }}.
+              add:
+                {{- . | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if and $c.appArmorUnconfined $aaField }}
+            # netmon.collector.appArmorUnconfined: the runtime's default
+            # AppArmor profile denies writes under /sys/fs/bpf (map pinning)
+            # and ptrace reads of host processes (listener table).
+            appArmorProfile:
+              type: Unconfined
+            {{- end }}
+            {{- with $c.seLinuxType }}
+            # netmon.collector.seLinuxType: container_t may not read the host
+            # /proc, mount cgroup2 or create BPF maps. Container level, so it
+            # does not extend to other containers added to the pod.
+            seLinuxOptions:
+              type: {{ . | quote }}
+            {{- end }}
+          {{- with $collectorResources }}
+          resources:
+            {{- . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            # The node's root cgroup v2 (C8R_NETMON_CGROUP_ROOT default). Not
+            # /sys/fs/cgroup: there the runtime shows the container's own
+            # cgroup namespace, not the node's root.
+            - name: cgroup
+              mountPath: /host/cgroup
+              readOnly: true
+            # The host's /proc (C8R_NETMON_HOST_PROC), so hostPID is not needed.
+            - name: host-proc
+              mountPath: /host/proc
+              readOnly: true
+            # Writable scratch under the read-only rootfs: on cgroup v1 nodes
+            # the collector privately mounts cgroup2 at /run/c8r-netmon/cgroup2.
+            - name: run
+              mountPath: /run/c8r-netmon
+            {{- if $c.pinPath }}
+            # bpffs for map pinning (C8R_NETMON_PIN_PATH).
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+            {{- end }}
+            {{- if eq $tls.mode "auto" }}
+            # Enrollment token (C8R_NETMON_ENROLL_TOKEN_FILE), re-read on
+            # every enrollment.
+            - name: enroll-token
+              mountPath: {{ include "..netmon.enrollTokenDir" . }}
+              readOnly: true
+            {{- end }}
+            {{- if eq $tls.mode "files" }}
+            - name: netmon-tls
+              mountPath: {{ $tls.files.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with $c.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
+        - name: run
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        {{- if $c.pinPath }}
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        {{- end }}
+        {{- if eq $tls.mode "auto" }}
+        # Bound token for the agent's sign endpoint only: audience
+        # c8r-netmon (pki.EnrollAudience), short-lived, rotated by the kubelet.
+        - name: enroll-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ include "..netmon.enrollAudience" . }}
+                  expirationSeconds: {{ $c.enrollTokenExpirationSeconds | int }}
+                  path: token
+        {{- end }}
+        {{- if eq $tls.mode "files" }}
+        - name: netmon-tls
+          {{- if $tls.files.collector.volume }}
+          {{- toYaml $tls.files.collector.volume | nindent 10 }}
+          {{- else }}
+          secret:
+            secretName: {{ $tls.files.collector.secretName }}
+          {{- end }}
+        {{- end }}
+        {{- with $c.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+{{- end }}

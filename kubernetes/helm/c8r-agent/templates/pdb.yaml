@@ -1,0 +1,31 @@
+{{- /*
+PDB for the agent Deployment. Only rendered when more than one replica can
+exist (replicas > 1 or the HPA): with a single replica maxUnavailable: 1 is a
+no-op and a PDB would only add noise. maxUnavailable (not minAvailable) so a
+drain never blocks, whatever the HPA's current replica count.
+*/}}
+{{- if and .Values.podDisruptionBudget.enabled (or .Values.autoscaling.enabled (gt (int .Values.replicas) 1)) }}
+# policy/v1 (k8s >= 1.21); the HPA already needs autoscaling/v2 (>= 1.23).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "..fullname" . }}
+  namespace: {{ include "..namespace" . }}
+  labels:
+    {{- include "..labels" . | nindent 4 }}
+    {{- with .Values.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.podDisruptionBudget.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.podDisruptionBudget.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "..selectorLabels" . | nindent 6 }}
+{{- end }}

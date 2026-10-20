@@ -53,17 +53,67 @@ nodeSelector: {}
 affinity: {}
 ## @param tolerations Tolerations for pod assignment. Applies only to agent, not collector DaemonSet.
 tolerations: []
-## @param resources.requests.cpu CPU request for the container.
-## @param resources.requests.memory Memory request for the container.
-## @param resources.requests.ephemeral-storage Ephemeral storage request for the container.
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-    ephemeral-storage: "128Mi"
-    # limits:
-    #   memory: 512Mi
-    #   ephemeral-storage: "128Mi"
+## @param resourcesPreset Size the agent and the netmon collector for your cluster: `default`, `small`, `medium`, `large`, `xlarge` or `none`. See the table below and the README "Sizing" section. `resources` and `netmon.collector.resources` are merged over the preset field by field.
+##
+## Pick the row for your cluster. Count both nodes and pods and take the
+## larger preset of the two.
+##
+##   preset   cluster size                   agent (c8r-agent container)        collector (per node)        netmon.resolveMode
+##   small    up to ~100 nodes / 3k pods     100m, 256Mi request, 512Mi limit   20m, 64Mi req, 256Mi limit  snapshot (default)
+##   medium   up to ~1k nodes / 30k pods     250m, 1Gi request, 1536Mi limit    20m, 64Mi req, 256Mi limit  auto
+##   large    up to ~3k nodes / 90k pods     500m, 2560Mi request, 4Gi limit    20m, 64Mi req, 256Mi limit  auto or ondemand
+##   xlarge   up to ~5k nodes / 150k pods    1 CPU, 4Gi request, 6Gi limit      20m, 64Mi req, 384Mi limit  auto or ondemand
+##   default  (the default value) netmon disabled: the chart's historical agent requests
+##            (100m, 128Mi, no limit), so existing installs render unchanged.
+##            netmon enabled: same as `small`.
+##   none     the chart sets no requests/limits; only what you put in `resources` and
+##            `netmon.collector.resources` is rendered.
+##   Every agent preset also requests 128Mi ephemeral-storage. No preset sets a CPU
+##   limit: the leader's window commit bursts to a few cores for a few seconds per
+##   window and a CPU limit would only throttle it.
+##
+## Where the agent numbers come from. Measured on synthetic load (laptop, kind and
+## kwok, 1000 flow rows per node per window); real clusters may have more or fewer
+## distinct flows per node, so check the metrics below on your cluster.
+##   - netmon leader window (only the leader holds it): peak RSS 0.67 GB at 1k nodes,
+##     1.85 GB at 3k, 2.97 GB at 5k (0.8-1.2 KB per aggregated flow key; 0.63 keys per
+##     row in the synthetic load).
+##   - netmon metadata (pod/node/Service informers, on EVERY replica): RSS 64 MB at 3k
+##     pods, ~240 MB at 30k, ~1.0 GB at ~112k (about 7 KB per pod); on-demand mode
+##     adds its change log and per-collector state (257-341 MB at 30k pods).
+##   - Cluster collection without netmon stays small even in big clusters: it flushes
+##     metrics to the API as it goes instead of holding them.
+##   - Each memory limit is about 1.5x the measured netmon peak (metadata + window).
+##     Requests are close to that peak, because the Go runtime keeps the memory it
+##     used at the window peak. A memory limit also sets GOMEMLIMIT to 90% of it.
+##   - CPU: on-demand resolve serving is about 0.05 cores at 1000 collectors (0.14
+##     under pod churn); the window commit is a few cores for a few seconds per
+##     window at 5k nodes.
+## Collector: the full snapshot (`netmon.resolveMode=snapshot`) costs a collector up to
+## 36 MB at 30k pods and 173 MB at 150k pods while it swaps snapshots; on-demand
+## resolution keeps its cache under ~32 MiB. The large/xlarge collector rows assume
+## `auto` or `ondemand`; with `snapshot` on xlarge also raise
+## `netmon.collector.resources.requests.memory` to ~160Mi.
+##
+## Check the fit (Prometheus, agent port `netmon.agent.plainPort` /metrics):
+##   c8r_netmon_server_window_peak_heap_bytes  leader heap peak per window; keep it
+##                                             under ~70% of the agent memory limit
+##   c8r_netmon_server_window_keys             aggregated keys per window (~1 KB each)
+##   container_memory_working_set_bytes        agent and collector containers
+##   kube_pod_container_status_last_terminated_reason{reason="OOMKilled"}
+##
+## Override: set `resources` / `netmon.collector.resources`. Every field you set wins;
+## every field you leave out comes from the preset (e.g. setting only
+## `resources.limits.memory=6Gi` keeps the preset's requests). To drop a preset
+## field, use `resourcesPreset: none` and set the whole block.
+## Replicas: one agent replica is enough at every preset. A second replica only
+## gives faster failover (about 15s instead of a pod restart); more add nothing.
+## With HPA (`autoscaling.enabled`) the preset applies to every replica: only the leader
+## holds the window, but any replica can become the leader. The HPA memory target
+## sees the leader's window peaks; consider `autoscaling.targetMemoryUtilizationPercentage: null`.
+resourcesPreset: default
+## @param resources Agent container resources, merged over `resourcesPreset` field by field (`{}` uses the preset as is). Example: `{requests: {memory: 1Gi}, limits: {memory: 3Gi}}`.
+resources: {}
 ## @param securityContext.allowPrivilegeEscalation Allow privilege escalation for the container.
 ## @param securityContext.readOnlyRootFilesystem Read only root filesystem for the container.
 ## @param securityContext.runAsNonRoot Run as non root user for the container.
@@ -167,21 +217,190 @@ networkCollection:
     # - name: KEY
     #   value: VALUE
 
+## @section Network monitoring (netmon, eBPF)
+## netmon replaces `networkCollection` (kubenetmon, conntrack). The two are mutually
+## exclusive: enabling both fails the install. When enabled the chart renders a
+## collector DaemonSet (same image, C8R_MODE=collector, hostNetwork), the agent
+## Service `netmon.service.name` the collectors dial, and the extra agent env/RBAC.
+## Only one netmon release per cluster: collectors bind ports on the node IP.
+netmon:
+  ## @param netmon.enabled Enable eBPF network monitoring (collector DaemonSet + agent netmon server). Mutually exclusive with `networkCollection.enabled`.
+  enabled: false
+  ## @param netmon.windowSeconds Window length in seconds (`C8R_NETMON_WINDOW_SECONDS`), set on both agent and collectors so they always match.
+  windowSeconds: 60
+  ## @param netmon.retentionSeconds Collector epoch retention in seconds (`C8R_NETMON_RETENTION_SECONDS`), set on both sides. Must be at least one window.
+  retentionSeconds: 900
+  ## @param netmon.resolveMode How collectors learn remote pod/node/Service identities (`C8R_NETMON_RESOLVE_MODE`): `snapshot` (every collector polls the full cluster snapshot), `ondemand` (collectors get a slim snapshot and ask the agent `/v1/resolve` for the in-cluster IPs they actually talk to; for large clusters) or `auto` (the leader switches to `ondemand` above `resolveAutoPods` pod IPs and back below 75% of it). Collectors that predate on-demand resolution keep getting the full snapshot.
+  resolveMode: snapshot
+  ## @param netmon.resolveAutoPods Pod IP count above which `resolveMode=auto` switches to on-demand resolution (`C8R_NETMON_RESOLVE_AUTO_PODS`, a positive integer).
+  resolveAutoPods: 20000
+  service:
+    ## @param netmon.service.name Name of the agent Service the collectors dial (`C8R_NETMON_SERVICE_NAME`). Its DNS names are in the agent certificate.
+    name: c8r-agent-netmon
+    ## @param netmon.service.annotations Annotations for the netmon Service.
+    annotations: {}
+  agent:
+    ## @param netmon.agent.serverPort Agent netmon API port (`C8R_NETMON_SERVER_PORT`): `/v1/metadata`, `/v1/cloudranges`, `/v1/resolve`, `/v1/resolve/changes`, `/v1/certs/sign`. TLS unless `netmon.tls.mode=disabled`.
+    serverPort: 9410
+    ## @param netmon.agent.plainPort Agent plain HTTP port (`C8R_NETMON_PLAIN_PORT`): `/livez`, `/healthz`, `/metrics`. Used by the probes.
+    plainPort: 9412
+    ## @param netmon.agent.addEnv Extra env for the agent container, only when netmon is enabled (e.g. `C8R_NETMON_PULL_DELAY`, `C8R_NETMON_SHARD`).
+    addEnv: []
+  cloudRanges:
+    ## @param netmon.cloudRanges.enabled Fetch the public cloud provider IP ranges on the agent, served to the collectors on `/v1/cloudranges` (`C8R_NETMON_CLOUD_RANGES_ENABLED`). Air-gapped clusters: set to false or point `urls` at a mirror.
+    enabled: true
+    ## @param netmon.cloudRanges.timeout Timeout of one cloud ranges download (`C8R_NETMON_CLOUD_RANGES_TIMEOUT`).
+    timeout: 60s
+    ## @param netmon.cloudRanges.urls Per-provider URL overrides (`C8R_NETMON_CLOUD_RANGES_URLS`, rendered as sorted `provider=url` pairs), e.g. `{aws: https://mirror.internal/ip-ranges.json}`. Empty: built-in upstream URLs.
+    urls: {}
+  tls:
+    ## @param netmon.tls.mode Transport security: `auto` (agent-owned CA, collectors enroll), `files` (bring your own certificates, e.g. cert-manager) or `disabled` (plain HTTP, development only).
+    mode: auto
+    ## @param netmon.tls.caName Name of the CA Secret and ConfigMap the agent creates and updates in `auto` mode (`C8R_NETMON_CA_NAME`). Not managed by Helm and kept on uninstall.
+    caName: c8r-agent-netmon-ca
+    ## @param netmon.tls.extraSANs Extra DNS names and IPs for the agent certificate (`C8R_NETMON_TLS_EXTRA_SANS`), `auto` mode.
+    extraSANs: []
+    files:
+      ## @param netmon.tls.files.mountPath Directory the `files` mode Secrets are mounted at, in both agent and collector.
+      mountPath: /etc/c8r-netmon/tls
+      ## @param netmon.tls.files.agent.secretName Secret with the agent CA bundle, certificate and key (`files` mode). Certificate: CN `c8r-netmon-agent:<pod>`, serverAuth+clientAuth, DNS SANs of `netmon.service.name`.
+      ## @param netmon.tls.files.agent.caKey Key of the CA bundle in the agent Secret.
+      ## @param netmon.tls.files.agent.certKey Key of the certificate in the agent Secret.
+      ## @param netmon.tls.files.agent.keyKey Key of the private key in the agent Secret.
+      agent:
+        secretName: ""
+        caKey: ca.crt
+        certKey: tls.crt
+        keyKey: tls.key
+      ## @param netmon.tls.files.collector.secretName Secret with the collector CA bundle, certificate and key (`files` mode). Shared by every collector, so its certificate needs an IP SAN for every node IP; prefer `volume`.
+      ## @param netmon.tls.files.collector.volume Volume source used instead of `secretName` (e.g. `csi` with the cert-manager CSI driver to get a per-node certificate: CN `c8r-netmon-collector:<node>`, IP SAN = node IP).
+      ## @param netmon.tls.files.collector.caKey File name of the CA bundle in the collector volume.
+      ## @param netmon.tls.files.collector.certKey File name of the certificate in the collector volume.
+      ## @param netmon.tls.files.collector.keyKey File name of the private key in the collector volume.
+      collector:
+        secretName: ""
+        # Any volume source, mounted at netmon.tls.files.mountPath. Example shape
+        # (check your CSI driver's docs for the attributes that give a per-node
+        # CN and node-IP SAN):
+        #   csi:
+        #     driver: csi.cert-manager.io
+        #     readOnly: true
+        #     volumeAttributes: {...}
+        volume: {}
+        caKey: ca.crt
+        certKey: tls.crt
+        keyKey: tls.key
+  ui:
+    ## @param netmon.ui.enabled Serve the read-only netmon web UI on the leader (`C8R_NETMON_UI`). It listens on 127.0.0.1 only, over plain HTTP, without authentication; reach it with `kubectl port-forward` (RBAC on `pods/portforward` is the access control). Never exposed by a Service.
+    enabled: false
+    ## @param netmon.ui.port UI port on the pod's loopback (`C8R_NETMON_UI_PORT`).
+    port: 9411
+    ## @param netmon.ui.windows Number of recent windows the UI keeps (`C8R_NETMON_UI_WINDOWS`, max 240).
+    windows: 30
+  collector:
+    ## @param netmon.collector.image.registry Collector image registry. Empty: `image.registry`.
+    ## @param netmon.collector.image.repository Collector image repository. Empty: `image.repository`.
+    ## @param netmon.collector.image.tag Collector image tag. Empty: `image.tag`, then `.Chart.AppVersion`. Collector and agent share the netmon API, keep them on the same version.
+    ## @param netmon.collector.image.pullPolicy Collector image pull policy. Empty: `image.pullPolicy`.
+    image:
+      registry: ""
+      repository: ""
+      tag: ""
+      pullPolicy: ""
+    ## @param netmon.collector.port Collector API port on the node IP (`C8R_NETMON_PORT`, mTLS, agent certificates only). Also set on the agent (`C8R_NETMON_COLLECTOR_PORT`).
+    port: 9409
+    ## @param netmon.collector.plainPort Collector plain HTTP port on the node IP (`C8R_NETMON_PLAIN_PORT`): `/livez`, `/healthz` (503 until enrolled), `/metrics`.
+    plainPort: 9408
+    ## @param netmon.collector.drainInterval How often the BPF flow map is drained (`C8R_NETMON_DRAIN_INTERVAL`, min 100ms).
+    drainInterval: 5s
+    ## @param netmon.collector.pinPath bpffs directory for map pinning (`C8R_NETMON_PIN_PATH`), keeps undrained counters across collector restarts. Needs bpffs mounted at /sys/fs/bpf on the node (default on EKS, GKE, AKS); without it the collector logs a warning and runs unpinned. "" disables pinning.
+    pinPath: /sys/fs/bpf/c8r-netmon
+    ## @param netmon.collector.conntrack Resolve ClusterIP traffic to backends through netlink conntrack (`C8R_NETMON_CONNTRACK`).
+    conntrack: true
+    ## @param netmon.collector.resolve On-demand identity resolution on the collector (`C8R_NETMON_RESOLVE`): `auto` (use it whenever the agent offers it, see `netmon.resolveMode`) or `off` (kill switch: always ask for the full snapshot).
+    resolve: auto
+    ## @param netmon.collector.logLevel Collector log level.
+    logLevel: info
+    ## @param netmon.collector.hostPID Share the host PID namespace. Not needed: the host's `/proc` is always mounted read-only at `/host/proc` (`C8R_NETMON_HOST_PROC`), which works with or without it.
+    hostPID: false
+    ## @param netmon.collector.cgroupV1Support Add `SYS_PTRACE` and `DAC_READ_SEARCH` (host listener table for pre-existing hostNetwork servers, `<proc>/1/root` dataplane hint) and `SYS_ADMIN` (private cgroup2 mount on pure cgroup v1 nodes, e.g. EKS Amazon Linux 2) to the collector. Not needed on cgroup v2 nodes; moot with `privileged`.
+    cgroupV1Support: false
+    ## @param netmon.collector.attachMode Attach mode (`C8R_NETMON_ATTACH_MODE`, rendered only when not `auto`): `auto` detects the node's cgroup layout, `cgroup2` forces the unified behaviour (fails on non-cgroup2 nodes), `legacy` forces owner attribution (testing). `tc` is reserved and rejected.
+    attachMode: auto
+    ## @param netmon.collector.privileged Run the collector privileged instead of with `netmon.collector.capabilities`. Escape hatch for node images where the capability set plus `appArmorUnconfined`/`seLinuxType` is still not enough (e.g. a seccomp or other LSM policy blocking `bpf()`).
+    privileged: false
+    ## @param netmon.collector.appArmorUnconfined Run the collector container AppArmor-unconfined: `securityContext.appArmorProfile: {type: Unconfined}` on Kubernetes >= 1.30, the pod annotation `container.apparmor.security.beta.kubernetes.io/collector: unconfined` before. The runtime default profile (Ubuntu nodes, incl. AKS and Ubuntu EKS; likely GKE COS too) denies writes under /sys/fs/bpf, so map pinning silently fails, and ptrace reads of host processes, so the host listener table is denied even with `cgroupV1Support`. No effect on nodes without AppArmor. false: leave the runtime default (or set your own in `podAnnotations`).
+    appArmorUnconfined: true
+    ## @param netmon.collector.seLinuxType SELinux type of the collector container (`securityContext.seLinuxOptions.type`). With container labelling (RHEL/Rocky with container-selinux, k3s `selinux: true`, OpenShift) the default `container_t` cannot read the host /proc, mount cgroup2 or create BPF maps, so the collector stays not ready. `spc_t` (super privileged container, as Cilium uses) lifts that. Ignored on nodes without SELinux. "" leaves it unset.
+    seLinuxType: spc_t
+    ## @param netmon.collector.capabilities Linux capabilities added to the collector (all others are dropped). BPF+PERFMON: load programs/maps and ring buffer (kernel >= 5.8); NET_ADMIN: attach cgroup_skb programs and read conntrack via netlink; SYS_RESOURCE: raise RLIMIT_MEMLOCK on kernels < 5.11.
+    capabilities:
+      - BPF
+      - PERFMON
+      - NET_ADMIN
+      - SYS_RESOURCE
+    ## @param netmon.collector.resources Collector resources, merged over `resourcesPreset` field by field (`{}` uses the preset: 20m / 64Mi request, 256Mi limit, 384Mi on `xlarge`). A memory limit is also exported as GOMEMLIMIT (90% of it). Raise the limit for nodes with very many flows (`C8R_NETMON_MAX_RING_ROWS`).
+    resources: {}
+    ## @param netmon.collector.priorityClassName PriorityClass of the collector pods (e.g. `system-node-critical`). Falls back to top-level `priorityClassName`.
+    priorityClassName: ""
+    ## @param netmon.collector.tolerations Collector tolerations. Default tolerates every taint so it runs on all nodes.
+    tolerations:
+      - operator: Exists
+    ## @param netmon.collector.nodeSelector Collector node selector.
+    nodeSelector: {}
+    ## @skip netmon.collector.affinity Collector affinity. Default keeps it off EKS Fargate (no DaemonSets / eBPF there), which the tolerate-everything default would otherwise allow.
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: eks.amazonaws.com/compute-type
+                  operator: NotIn
+                  values:
+                    - fargate
+    ## @param netmon.collector.updateStrategy DaemonSet update strategy.
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 10%
+    ## @param netmon.collector.terminationGracePeriodSeconds Grace period; the collector detaches its programs on SIGTERM.
+    terminationGracePeriodSeconds: 30
+    ## @param netmon.collector.enrollTokenExpirationSeconds Lifetime of the projected enrollment token (`netmon.tls.mode=auto`, audience `c8r-netmon`, mounted at `/var/run/secrets/c8r-netmon/enroll/token`). The kubelet rotates it at 80% of its lifetime; minimum 600.
+    enrollTokenExpirationSeconds: 3600
+    ## @param netmon.collector.podLabels Extra labels for the collector pods.
+    podLabels: {}
+    ## @param netmon.collector.podAnnotations Annotations for the collector pods.
+    podAnnotations: {}
+    ## @param netmon.collector.serviceAccount.name Collector ServiceAccount name. Empty: `<fullname>-netmon-collector`.
+    ## @param netmon.collector.serviceAccount.annotations Collector ServiceAccount annotations.
+    serviceAccount:
+      name: ""
+      annotations: {}
+    ## @param netmon.collector.addEnv Extra env for the collector (e.g. `C8R_NETMON_MAX_FLOWS`, `C8R_NETMON_INTERNET_IP_CAP`).
+    addEnv: []
+    ## @param netmon.collector.addEnvFrom Extra envFrom for the collector.
+    addEnvFrom: []
+    ## @param netmon.collector.extraVolumes Extra volumes for the collector pods.
+    extraVolumes: []
+    ## @param netmon.collector.extraVolumeMounts Extra volume mounts for the collector container.
+    extraVolumeMounts: []
+
 ## @param gpuCollection.nvidia Nvidia DCGM Exporter service url, format: http[s]://<service_name>[.namespace[.svc.cluster.local]]:port
 gpuCollection:
   nvidia: ""
 
-## @param autoscaling.enabled Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true`. When enabled, `replicas` is ignored.
+## @param autoscaling.enabled Enable HorizontalPodAutoscaler for the deployment. Requires `networkCollection.enabled=true` or `netmon.enabled=true`. When enabled, `replicas` is ignored.
 ## @param autoscaling.minReplicas Minimum number of replicas.
 ## @param autoscaling.maxReplicas Maximum number of replicas.
-## @param autoscaling.targetCPUUtilizationPercentage Target average CPU utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the CPU metric.
-## @param autoscaling.targetMemoryUtilizationPercentage Target average memory utilization of the `c8r-network-agent` container (as a percentage of its request). Set to `null` to disable the memory metric.
+## @param autoscaling.targetCPUUtilizationPercentage Target average CPU utilization of the `c8r-network-agent` container (`c8r-agent` with netmon) (as a percentage of its request). Set to `null` to disable the CPU metric.
+## @param autoscaling.targetMemoryUtilizationPercentage Target average memory utilization of the `c8r-network-agent` container (`c8r-agent` with netmon) (as a percentage of its request). Set to `null` to disable the memory metric.
 ## @param autoscaling.behavior HPA scaling behavior (scaleUp/scaleDown policies). Passed through as-is.
 ## @param autoscaling.annotations Annotations for the HorizontalPodAutoscaler.
 ## @param autoscaling.labels Extra labels for the HorizontalPodAutoscaler.
 autoscaling:
-  # Requires networkCollection.enabled=true — the HPA scales on the
-  # c8r-network-agent container, which only exists when network collection is on.
+  # Requires networkCollection.enabled=true (scales on the c8r-network-agent
+  # container) or netmon.enabled=true (scales on the c8r-agent container: every
+  # replica serves netmon metadata/enrollment, only the leader pulls).
   enabled: false
   minReplicas: 1
   maxReplicas: 10
@@ -190,3 +409,11 @@ autoscaling:
   behavior: {}
   annotations: {}
   labels: {}
+
+## @param podDisruptionBudget.enabled Create a PodDisruptionBudget (`maxUnavailable: 1`) for the agent Deployment when `replicas` > 1 or `autoscaling.enabled`.
+## @param podDisruptionBudget.labels Extra labels for the PodDisruptionBudget.
+## @param podDisruptionBudget.annotations Annotations for the PodDisruptionBudget.
+podDisruptionBudget:
+  enabled: true
+  labels: {}
+  annotations: {}
