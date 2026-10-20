@@ -232,21 +232,30 @@ Requirements and notes:
   cluster. Allow agent pods to reach node IPs on 9409, and nodes to reach the agent
   Service on 9410, if NetworkPolicies or security groups restrict that.
 * Ports: collector 9408 (plain `/livez`, `/healthz`, `/metrics`), 9409 (mTLS API);
-  agent 9410 (TLS API + enrollment), 9411 (optional UI), 9412 (plain `/livez`,
+  agent 9410 (TLS API + enrollment), 9411 (optional UI, `127.0.0.1` only), 9412 (plain `/livez`,
   `/healthz`, `/metrics`). Both probes use the plain ports.
 * `auto` TLS mode: the agent creates the Secret and ConfigMap `netmon.tls.caName`
   (default `c8r-agent-netmon-ca`). They are not managed by Helm and intentionally survive
   `helm uninstall`, so a reinstall keeps the same CA and existing trust. To reset the CA
   (or clean up completely), delete them after uninstalling:
   `kubectl -n <ns> delete secret,configmap <netmon.tls.caName>` (default `c8r-agent-netmon-ca`).
+* `auto` TLS mode enrollment: collectors enroll with a projected service-account token for
+  the audience `c8r-netmon` (volume `enroll-token`, mounted at
+  `/var/run/secrets/c8r-netmon/enroll`, lifetime `netmon.collector.enrollTokenExpirationSeconds`,
+  rotated by the kubelet), never with their default API token. The chart sets
+  `C8R_NETMON_COLLECTOR_SERVICE_ACCOUNT` on the agent, so only the collector service
+  account's tokens from DaemonSet pods can obtain collector certificates.
 * `files` TLS mode: `netmon.tls.files.agent.secretName` holds the agent CA bundle,
   certificate and key. Each collector needs a certificate with CN
   `c8r-netmon-collector:<node>` and an IP SAN for its node IP, so either a shared
   `netmon.tls.files.collector.secretName` whose certificate lists every node IP, or a
   per-pod `netmon.tls.files.collector.volume` (for example a CSI driver).
-* UI: `netmon.ui.enabled=true`, then
-  `kubectl -n <ns> port-forward <leader pod> 9411:9411` (the leader is the holder of the
-  Lease `c8r-agent`) and log in with `kubectl -n <ns> create token <agent service account>`.
+* UI: `netmon.ui.enabled=true`. The UI is a read-only overview without authentication: it
+  listens on the pod's `127.0.0.1` only (plain HTTP), no Service or containerPort exposes
+  it, and Kubernetes RBAC on `pods/portforward` decides who can open it:
+  `kubectl -n <ns> port-forward deploy/<release> 9411`, then open http://localhost:9411.
+  Only the leader serves data; with several replicas port-forward to the leader pod (the
+  holder of the Lease `c8r-agent`).
 
 RBAC granted when `netmon.enabled=true`:
 
@@ -254,8 +263,7 @@ RBAC granted when `netmon.enabled=true`:
 | ------- | ----- | ---- | --- |
 | collector | ClusterRole | `pods`, `nodes`: get/list/watch | Map local cgroups to pods on its node, read its node's provider id/zone (informers use field selectors, which RBAC cannot express) |
 | collector | Role (auto mode) | `configmaps` `[caName]`: get/list/watch | Trust the CA bundle (list/watch are authorized by name through the `metadata.name` field selector) |
-| agent | ClusterRole (auto mode or UI) | `tokenreviews`: create | Authenticate collector enrollment tokens and UI tokens |
-| agent | ClusterRole (UI) | `selfsubjectreviews`: create | Find its own identity for the UI allowlist |
+| agent | ClusterRole (auto mode) | `tokenreviews`: create | Authenticate collector enrollment tokens |
 | agent | Role (auto mode) | `secrets`, `configmaps` `[caName]`: get/update | Load, rotate and publish the CA |
 | agent | Role (auto mode) | `secrets`, `configmaps`: create | Create the CA objects on first start (RBAC cannot restrict create by name) |
 
@@ -297,11 +305,9 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `netmon.tls.files.collector.caKey` | File name of the CA bundle in the collector volume. | `ca.crt` |
 | `netmon.tls.files.collector.certKey` | File name of the certificate in the collector volume. | `tls.crt` |
 | `netmon.tls.files.collector.keyKey` | File name of the private key in the collector volume. | `tls.key` |
-| `netmon.ui.enabled` | Serve the netmon web UI on the leader (`C8R_NETMON_UI`). HTTPS unless TLS is disabled; reach it with `kubectl port-forward` to the leader pod. | `false` |
-| `netmon.ui.port` | UI port (`C8R_NETMON_UI_PORT`). | `9411` |
+| `netmon.ui.enabled` | Serve the read-only netmon web UI on the leader (`C8R_NETMON_UI`). It listens on 127.0.0.1 only, over plain HTTP, without authentication; reach it with `kubectl port-forward` (RBAC on `pods/portforward` is the access control). Never exposed by a Service. | `false` |
+| `netmon.ui.port` | UI port on the pod's loopback (`C8R_NETMON_UI_PORT`). | `9411` |
 | `netmon.ui.windows` | Number of recent windows the UI keeps (`C8R_NETMON_UI_WINDOWS`, max 240). | `30` |
-| `netmon.ui.allowedSubjects` | Extra subjects allowed to log in (`C8R_NETMON_UI_ALLOWED_SUBJECTS`): usernames such as `system:serviceaccount:<ns>:<name>`, or `group:<name>`. The agent's own service account is always allowed. | `[]` |
-| `netmon.ui.insecure` | Serve the UI API WITHOUT authentication (`C8R_NETMON_UI_INSECURE`). Local development only. | `false` |
 | `netmon.collector.image.registry` | Collector image registry. Empty: `image.registry`. | `""` |
 | `netmon.collector.image.repository` | Collector image repository. Empty: `image.repository`. | `""` |
 | `netmon.collector.image.tag` | Collector image tag. Empty: `image.tag`, then `.Chart.AppVersion`. Collector and agent share the netmon API, keep them on the same version. | `""` |
@@ -326,6 +332,7 @@ Disable it with `podDisruptionBudget.enabled=false`.
 | `netmon.collector.nodeSelector` | Collector node selector. | `{}` |
 | `netmon.collector.updateStrategy` | DaemonSet update strategy. | `{"type":"RollingUpdate","rollingUpdate":{"maxUnavailable":"10%"}}` |
 | `netmon.collector.terminationGracePeriodSeconds` | Grace period; the collector detaches its programs on SIGTERM. | `30` |
+| `netmon.collector.enrollTokenExpirationSeconds` | Lifetime of the projected enrollment token (`netmon.tls.mode=auto`, audience `c8r-netmon`, mounted at `/var/run/secrets/c8r-netmon/enroll/token`). The kubelet rotates it at 80% of its lifetime; minimum 600. | `3600` |
 | `netmon.collector.podLabels` | Extra labels for the collector pods. | `{}` |
 | `netmon.collector.podAnnotations` | Annotations for the collector pods. | `{}` |
 | `netmon.collector.serviceAccount.name` | Collector ServiceAccount name. Empty: `<fullname>-netmon-collector`. | `""` |

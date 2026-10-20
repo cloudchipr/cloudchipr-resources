@@ -155,14 +155,6 @@ spec:
             value: {{ $netmon.ui.port | quote }}
           - name: C8R_NETMON_UI_WINDOWS
             value: {{ $netmon.ui.windows | quote }}
-          {{- with $netmon.ui.allowedSubjects }}
-          - name: C8R_NETMON_UI_ALLOWED_SUBJECTS
-            value: {{ join "," . | quote }}
-          {{- end }}
-          {{- if $netmon.ui.insecure }}
-          - name: C8R_NETMON_UI_INSECURE
-            value: "true"
-          {{- end }}
           {{- end }}
           {{- with $netmon.agent.addEnv }}
           {{- toYaml . | nindent 10 }}
@@ -193,11 +185,8 @@ spec:
           - name: netmon-plain
             containerPort: {{ $netmon.agent.plainPort }}
             protocol: TCP
-          {{- if $netmon.ui.enabled }}
-          - name: netmon-ui
-            containerPort: {{ $netmon.ui.port }}
-            protocol: TCP
-          {{- end }}
+          {{- /* No containerPort for the netmon UI: it listens on 127.0.0.1
+          only and is reached with kubectl port-forward (see NOTES.txt). */}}
         # Plain port: /healthz is 503 until the netmon TLS material is
         # loaded, so the netmon Service only routes collectors to replicas
         # that can serve them. /livez is 200 while the process serves.

@@ -291,16 +291,12 @@ netmon:
         certKey: tls.crt
         keyKey: tls.key
   ui:
-    ## @param netmon.ui.enabled Serve the netmon web UI on the leader (`C8R_NETMON_UI`). HTTPS unless TLS is disabled; reach it with `kubectl port-forward` to the leader pod.
+    ## @param netmon.ui.enabled Serve the read-only netmon web UI on the leader (`C8R_NETMON_UI`). It listens on 127.0.0.1 only, over plain HTTP, without authentication; reach it with `kubectl port-forward` (RBAC on `pods/portforward` is the access control). Never exposed by a Service.
     enabled: false
-    ## @param netmon.ui.port UI port (`C8R_NETMON_UI_PORT`).
+    ## @param netmon.ui.port UI port on the pod's loopback (`C8R_NETMON_UI_PORT`).
     port: 9411
     ## @param netmon.ui.windows Number of recent windows the UI keeps (`C8R_NETMON_UI_WINDOWS`, max 240).
     windows: 30
-    ## @param netmon.ui.allowedSubjects Extra subjects allowed to log in (`C8R_NETMON_UI_ALLOWED_SUBJECTS`): usernames such as `system:serviceaccount:<ns>:<name>`, or `group:<name>`. The agent's own service account is always allowed.
-    allowedSubjects: []
-    ## @param netmon.ui.insecure Serve the UI API WITHOUT authentication (`C8R_NETMON_UI_INSECURE`). Local development only.
-    insecure: false
   collector:
     ## @param netmon.collector.image.registry Collector image registry. Empty: `image.registry`.
     ## @param netmon.collector.image.repository Collector image repository. Empty: `image.repository`.
@@ -369,6 +365,8 @@ netmon:
         maxUnavailable: 10%
     ## @param netmon.collector.terminationGracePeriodSeconds Grace period; the collector detaches its programs on SIGTERM.
     terminationGracePeriodSeconds: 30
+    ## @param netmon.collector.enrollTokenExpirationSeconds Lifetime of the projected enrollment token (`netmon.tls.mode=auto`, audience `c8r-netmon`, mounted at `/var/run/secrets/c8r-netmon/enroll/token`). The kubelet rotates it at 80% of its lifetime; minimum 600.
+    enrollTokenExpirationSeconds: 3600
     ## @param netmon.collector.podLabels Extra labels for the collector pods.
     podLabels: {}
     ## @param netmon.collector.podAnnotations Annotations for the collector pods.

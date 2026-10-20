@@ -129,6 +129,10 @@ so a bad combination fails every install/upgrade/template run.
 {{- if not (has $collectorResolve (list "auto" "off")) }}
 {{- fail (printf "netmon.collector.resolve must be one of auto, off (got %q)" $collectorResolve) }}
 {{- end }}
+{{- $exp := .Values.netmon.collector.enrollTokenExpirationSeconds }}
+{{- if not (and (or (kindIs "int" $exp) (kindIs "int64" $exp) (kindIs "float64" $exp)) (ge (float64 $exp) 600.0) (eq (float64 $exp) (floor (float64 $exp)))) }}
+{{- fail (printf "netmon.collector.enrollTokenExpirationSeconds must be an integer of at least 600 (got %v)" $exp) }}
+{{- end }}
 {{- $mode := .Values.netmon.tls.mode }}
 {{- if not (has $mode (list "auto" "files" "disabled")) }}
 {{- fail (printf "netmon.tls.mode must be one of auto, files, disabled (got %q)" $mode) }}
@@ -143,9 +147,6 @@ so a bad combination fails every install/upgrade/template run.
 {{- end }}
 {{- if not (kindIs "slice" .Values.netmon.tls.extraSANs) }}
 {{- fail "netmon.tls.extraSANs must be a list" }}
-{{- end }}
-{{- if not (kindIs "slice" .Values.netmon.ui.allowedSubjects) }}
-{{- fail "netmon.ui.allowedSubjects must be a list" }}
 {{- end }}
 {{- if not (kindIs "map" .Values.netmon.cloudRanges.urls) }}
 {{- fail "netmon.cloudRanges.urls must be a map of provider to URL (e.g. {aws: https://mirror.example/ip-ranges.json})" }}
@@ -262,6 +263,16 @@ component label cannot enroll.
 {{- end }}
 
 {{/*
+Collector enrollment token (netmon.tls.mode=auto): a projected
+serviceAccountToken with this audience, mounted at this directory (file
+"token"). Must match pki.EnrollAudience and pki.DefaultEnrollTokenFile in
+c8r-agent (pkg/netmon/pki/config.go); the agent's TokenReview requires the
+audience, so the token the collector sends is useless against the API server.
+*/}}
+{{- define "..netmon.enrollAudience" -}}c8r-netmon{{- end }}
+{{- define "..netmon.enrollTokenDir" -}}/var/run/secrets/c8r-netmon/enroll{{- end }}
+
+{{/*
 TLS env shared by agent and collector. Arg: dict "root" $ "side" ("agent"|"collector").
 */}}
 {{- define "..netmon.tlsEnv" -}}
@@ -271,6 +282,15 @@ TLS env shared by agent and collector. Arg: dict "root" $ "side" ("agent"|"colle
 {{- if eq $v.tls.mode "auto" }}
 - name: C8R_NETMON_CA_NAME
   value: {{ $v.tls.caName | quote }}
+{{- if eq .side "agent" }}
+# Enrollment accepts only tokens of this service account, from DaemonSet pods.
+- name: C8R_NETMON_COLLECTOR_SERVICE_ACCOUNT
+  value: {{ include "..netmon.collectorServiceAccountName" .root | quote }}
+{{- else }}
+# Projected token with audience {{ include "..netmon.enrollAudience" . }} (volume enroll-token).
+- name: C8R_NETMON_ENROLL_TOKEN_FILE
+  value: {{ printf "%s/token" (include "..netmon.enrollTokenDir" .) | quote }}
+{{- end }}
 {{- else if eq $v.tls.mode "files" }}
 {{- $f := index $v.tls.files .side }}
 {{- $dir := $v.tls.files.mountPath }}

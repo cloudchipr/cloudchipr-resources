@@ -35,8 +35,11 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-# The projected token is how the collector enrolls (POST /v1/certs/sign) and
-# how its informers authenticate.
+# The default projected token authenticates the collector's informers. It
+# enrolls (POST /v1/certs/sign) with a separate token for the audience
+# c8r-netmon (volume enroll-token), so what it sends the agent is useless
+# against the API server. The agent accepts enrollment tokens of this
+# service account only (C8R_NETMON_COLLECTOR_SERVICE_ACCOUNT).
 automountServiceAccountToken: true
 ---
 # Cluster-scoped reads, all from identity resolution on the collector's own
@@ -328,6 +331,13 @@ spec:
             - name: bpffs
               mountPath: /sys/fs/bpf
             {{- end }}
+            {{- if eq $tls.mode "auto" }}
+            # Enrollment token (C8R_NETMON_ENROLL_TOKEN_FILE), re-read on
+            # every enrollment.
+            - name: enroll-token
+              mountPath: {{ include "..netmon.enrollTokenDir" . }}
+              readOnly: true
+            {{- end }}
             {{- if eq $tls.mode "files" }}
             - name: netmon-tls
               mountPath: {{ $tls.files.mountPath }}
@@ -354,6 +364,17 @@ spec:
           hostPath:
             path: /sys/fs/bpf
             type: DirectoryOrCreate
+        {{- end }}
+        {{- if eq $tls.mode "auto" }}
+        # Bound token for the agent's sign endpoint only: audience
+        # c8r-netmon (pki.EnrollAudience), short-lived, rotated by the kubelet.
+        - name: enroll-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ include "..netmon.enrollAudience" . }}
+                  expirationSeconds: {{ $c.enrollTokenExpirationSeconds | int }}
+                  path: token
         {{- end }}
         {{- if eq $tls.mode "files" }}
         - name: netmon-tls
