@@ -228,7 +228,7 @@ netmon:
   enabled: false
   ## @param netmon.windowSeconds Window length in seconds (`C8R_NETMON_WINDOW_SECONDS`), set on both agent and collectors so they always match.
   windowSeconds: 60
-  ## @param netmon.retentionSeconds Collector epoch retention in seconds (`C8R_NETMON_RETENTION_SECONDS`), set on both sides. Must be at least one window.
+  ## @param netmon.retentionSeconds Collector epoch retention in seconds (`C8R_NETMON_RETENTION_SECONDS`), set on both sides. Must be at least (max lag windows + 1) × windowSeconds + pull delay, or the agent refuses to start; at the defaults (10 lag windows, 10 s pull delay) that is 670 s, so windowSeconds can be at most 80 with 900.
   retentionSeconds: 900
   ## @param netmon.resolveMode How collectors learn remote pod/node/Service identities (`C8R_NETMON_RESOLVE_MODE`): `snapshot` (every collector polls the full cluster snapshot), `ondemand` (collectors get a slim snapshot and ask the agent `/v1/resolve` for the in-cluster IPs they actually talk to; for large clusters) or `auto` (the leader switches to `ondemand` above `resolveAutoPods` pod IPs and back below 75% of it). Collectors that predate on-demand resolution keep getting the full snapshot.
   resolveMode: snapshot
