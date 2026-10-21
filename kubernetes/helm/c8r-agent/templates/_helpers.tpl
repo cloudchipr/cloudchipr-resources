@@ -177,6 +177,109 @@ so a bad combination fails every install/upgrade/template run.
 {{- end }}
 
 {{/*
+Collector epoch retention in seconds (C8R_NETMON_RETENTION_SECONDS), rendered
+on both the agent and the collectors so they always match.
+
+The agent refuses to start unless
+  (C8R_NETMON_MAX_LAG_WINDOWS + 1) * C8R_NETMON_WINDOW_SECONDS + C8R_NETMON_PULL_DELAY
+    <= C8R_NETMON_RETENTION_SECONDS
+(pkg/netmon/server/config.go validateLag). MAX_LAG_WINDOWS and PULL_DELAY are
+not chart values: they are read from the agent env (netmon.agent.addEnv, then
+addEnv, which the container lists later so it wins), else the agent defaults
+10 and 10s.
+
+netmon.retentionSeconds empty (default): auto =
+  max(900, ceil(required) + windowSeconds), one extra window of margin; 900
+  keeps 60 s windows exactly as before.
+netmon.retentionSeconds set: used as is, but fails here when below required
+  (no margin), the same rule the agent applies at startup.
+
+PULL_DELAY is a Go duration (time.ParseDuration): "0" or integer h/m/s/ms
+parts such as 10s, 1m, 1m30s, 500ms. Anything else (a bare number, which the
+agent itself rejects, decimals, valueFrom) fails in auto mode and asks for
+an explicit netmon.retentionSeconds; an explicit value is then rendered
+unchecked and the agent validates it at startup. Required is computed in
+milliseconds so the check matches the agent exactly.
+*/}}
+{{- define "..netmon.retentionSeconds" -}}
+{{- $n := .Values.netmon }}
+{{- $win := $n.windowSeconds }}
+{{- if not (and (or (kindIs "int" $win) (kindIs "int64" $win) (kindIs "float64" $win)) (ge (float64 $win) 1.0) (eq (float64 $win) (floor (float64 $win)))) }}
+{{- fail (printf "netmon.windowSeconds must be a positive integer (got %v)" $win) }}
+{{- end }}
+{{- $win = int64 $win }}
+{{- $maxLagRaw := "10" }}
+{{- $pullRaw := "10s" }}
+{{- $maxLagSrc := "default" }}
+{{- $pullSrc := "default" }}
+{{- $env := concat ($n.agent.addEnv | default list) (.Values.addEnv | default list) }}
+{{- range $env }}
+{{- if eq (toString .name) "C8R_NETMON_MAX_LAG_WINDOWS" }}
+{{- $maxLagRaw = ternary (toString .value) "" (hasKey . "value") }}
+{{- $maxLagSrc = "addEnv" }}
+{{- end }}
+{{- if eq (toString .name) "C8R_NETMON_PULL_DELAY" }}
+{{- $pullRaw = ternary (toString .value) "" (hasKey . "value") }}
+{{- $pullSrc = "addEnv" }}
+{{- end }}
+{{- end }}
+{{- $ret := $n.retentionSeconds }}
+{{- $auto := or (kindIs "invalid" $ret) (eq (toString $ret) "") }}
+{{- if not (or $auto (regexMatch "^[0-9]+$" (toString $ret))) }}
+{{- fail (printf "netmon.retentionSeconds must be a positive integer, or empty for auto (got %v)" $ret) }}
+{{- end }}
+{{- $parseErr := "" }}
+{{- $maxLag := int64 0 }}
+{{- if regexMatch "^[0-9]+$" $maxLagRaw }}
+{{- $maxLag = int64 $maxLagRaw }}
+{{- else }}
+{{- $parseErr = printf "C8R_NETMON_MAX_LAG_WINDOWS %q (%s) is not a positive integer literal" $maxLagRaw $maxLagSrc }}
+{{- end }}
+{{- $pullMs := int64 0 }}
+{{- if ne $pullRaw "0" }}
+{{- $parts := regexFindAll "[0-9]+(ms|h|m|s)" $pullRaw -1 }}
+{{- if or (not $parts) (ne (join "" $parts) $pullRaw) }}
+{{- $parseErr = printf "C8R_NETMON_PULL_DELAY %q (%s) is not a Go duration with integer h/m/s/ms parts such as 10s, 1m or 1m30s (a bare number is rejected by the agent too)" $pullRaw $pullSrc }}
+{{- else }}
+{{- range $parts }}
+{{- if hasSuffix "ms" . }}
+{{- $pullMs = add $pullMs (int64 (trimSuffix "ms" .)) }}
+{{- else if hasSuffix "h" . }}
+{{- $pullMs = add $pullMs (mul (int64 (trimSuffix "h" .)) 3600000) }}
+{{- else if hasSuffix "m" . }}
+{{- $pullMs = add $pullMs (mul (int64 (trimSuffix "m" .)) 60000) }}
+{{- else }}
+{{- $pullMs = add $pullMs (mul (int64 (trimSuffix "s" .)) 1000) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $parseErr }}
+{{- /* Explicit retention: the chart cannot check it, the agent will at startup. */}}
+{{- if $auto }}
+{{- fail (printf "cannot compute netmon.retentionSeconds automatically: %s. Fix the value, or set netmon.retentionSeconds explicitly to at least (C8R_NETMON_MAX_LAG_WINDOWS + 1) x netmon.windowSeconds (%d) + pull delay, in seconds" $parseErr $win) }}
+{{- end }}
+{{- toString $ret }}
+{{- else }}
+{{- if lt $maxLag 1 }}
+{{- fail "C8R_NETMON_MAX_LAG_WINDOWS must be >= 1 (the agent rejects 0)" }}
+{{- end }}
+{{- $requiredMs := add (mul (add $maxLag 1) $win 1000) $pullMs }}
+{{- $requiredS := div (add $requiredMs 999) 1000 }}
+{{- $autoS := max 900 (add $requiredS $win) }}
+{{- if $auto }}
+{{- $autoS }}
+{{- else }}
+{{- $retS := int64 (toString $ret) }}
+{{- if lt (mul $retS 1000) $requiredMs }}
+{{- fail (printf "netmon.retentionSeconds=%d is below the minimum the agent accepts: (C8R_NETMON_MAX_LAG_WINDOWS + 1) x windowSeconds + C8R_NETMON_PULL_DELAY = (%d + 1) x %d + %s = %d s (MAX_LAG_WINDOWS from %s, PULL_DELAY from %s). Raise netmon.retentionSeconds to at least %d, or leave it empty for auto (%d)" $retS $maxLag $win $pullRaw $requiredS $maxLagSrc $pullSrc $requiredS $autoS) }}
+{{- end }}
+{{- $retS }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Capabilities added to the non-privileged collector, as a YAML list:
 netmon.collector.capabilities plus, with netmon.collector.cgroupV1Support,
   SYS_PTRACE:      host-netns listener table (ns/net and fd/* links of

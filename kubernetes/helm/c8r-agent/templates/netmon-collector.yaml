@@ -211,7 +211,7 @@ spec:
             - name: C8R_NETMON_WINDOW_SECONDS
               value: {{ .Values.netmon.windowSeconds | quote }}
             - name: C8R_NETMON_RETENTION_SECONDS
-              value: {{ .Values.netmon.retentionSeconds | quote }}
+              value: {{ include "..netmon.retentionSeconds" . | quote }}
             - name: C8R_NETMON_DRAIN_INTERVAL
               value: {{ $c.drainInterval | quote }}
             - name: C8R_NETMON_CONNTRACK
